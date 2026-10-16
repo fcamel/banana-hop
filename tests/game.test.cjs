@@ -1,7 +1,10 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const elements=new Map();const element=id=>{if(!elements.has(id))elements.set(id,{style:{},hidden:false,classList:{add(){},remove(){}},textContent:'',innerHTML:'',addEventListener(){},setAttribute(){},focus(){},getBoundingClientRect:()=>({width:1000,height:650,left:0,top:0}),setPointerCapture(){}});return elements.get(id);};
-const context={console,Math,Set,Image:class{constructor(){this.complete=false;this.naturalWidth=0;}},devicePixelRatio:1,document:{getElementById:element,addEventListener(){}},window:{addEventListener(){}},ResizeObserver:class{observe(){}},requestAnimationFrame(){}};element('game').getContext=()=>({setTransform(){}});vm.createContext(context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/game.js','utf8'),context);const run=s=>vm.runInContext(s,context);
+const context={console,Math,Set,setTimeout,clearTimeout,Image:class{constructor(){this.complete=true;this.naturalWidth=64;this.naturalHeight=64;}decode(){return Promise.resolve();}},devicePixelRatio:1,document:{getElementById:element,addEventListener(){},createElement:()=>({getContext:()=>({drawImage(){}})})},window:{addEventListener(){}},ResizeObserver:class{observe(){}},requestAnimationFrame(){}};element('game').getContext=()=>({setTransform(){}});vm.createContext(context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/game.js','utf8'),context);const run=s=>vm.runInContext(s,context);
 function test(name,body){body();console.log('PASS',name);}
+(async()=>{
+await run('loadGameAssets()');
+test('Initial asset loading finishes before opening the main menu',()=>{assert.equal(run('assetsReady'),true);assert.equal(run('state'),'intro');assert.equal(element('start').disabled,false);assert.equal(element('loadingScreen').hidden,true);assert.ok(run('!!mutedFloor'));});
 test('Insufficient charge cannot activate',()=>{run('reset();charge=99;activate()');assert.equal(run('special'),null);assert.equal(run('charge'),99);});
 test('First stomp gives 0.2 and consecutive stomp gives 0.1; unripe banana needs two',()=>{run("reset();enemies=[];const e={id:999,x:0,y:0,hp:2,type:'thick',hit:0,color:'#fff'};hitEnemy(e,true)");assert.equal(run('e.hp'),1);assert.equal(run('charge'),20);run('e.hit=0;hitEnemy(e,true)');assert.equal(run('e.hp'),0);assert.equal(run('charge'),30);assert.equal(run('peels.length'),1);});
 test('Enemy damage knocks down and gives immunity',()=>{run("reset();hurt('撞到香蕉')");assert.equal(run('player.hp'),4);assert.equal(run('player.down'),.5);assert.equal(run('player.inv'),1.8);run("hurt('撞到香蕉')");assert.equal(run('player.hp'),4);});
@@ -167,3 +170,17 @@ test('Invincible players can still slip, stomp and win; unchecking restores norm
 
 test('Mobile character scale is 0.7 and narrow or coarse layouts share the same detection',()=>{assert.equal(run('characterScale()'),1);run("window.matchMedia=query=>({matches:query.includes('pointer: coarse')})");assert.equal(run('characterScale()'),.7);run('window.matchMedia=()=>({matches:false})');assert.equal(run('characterScale()'),1);run('delete window.matchMedia');});
 test('Mobile enemy collision footprints shrink with sprites',()=>{run("window.matchMedia=()=>({matches:true});reset();enemies=[];spawnClock=100;var smallMobileEnemy=spawn(0,'normal',{x:24,y:0});smallMobileEnemy.speed=0;update(.001)");assert.equal(run('player.hp'),5);run('smallMobileEnemy.x=10;update(.001)');assert.equal(run('player.hp'),4);run('delete window.matchMedia');});
+
+await (async()=>{
+run("var savedGroundDecode=groundSprite.decode;assetsReady=false;groundSprite.decode=()=>new Promise(resolve=>{globalThis.releaseImageDecode=resolve;})");
+const loading=run('loadGameAssets()');await Promise.resolve();
+assert.equal(run('assetsReady'),false);assert.equal(element('start').disabled,true);assert.equal(element('overlay').hidden,true);
+run('reset()');assert.equal(run('state'),'loading');
+run('releaseImageDecode()');assert.equal(await loading,true);assert.equal(run('assetsReady'),true);run('groundSprite.decode=savedGroundDecode');
+console.log('PASS Start remains blocked until the last sprite finishes decoding');
+run("var savedEnemyDecode=enemySprite.decode;assetsReady=false;enemySprite.decode=()=>Promise.reject(new Error('test decode failure'))");
+assert.equal(await run('loadGameAssets()'),false);assert.equal(run('state'),'load-error');assert.equal(element('start').disabled,true);assert.equal(element('loadingRetry').hidden,false);assert.equal(element('loadingScreen').hidden,false);
+run('enemySprite.decode=savedEnemyDecode');assert.equal(await run('loadGameAssets()'),true);assert.equal(run('state'),'intro');assert.equal(element('loadingScreen').hidden,true);assert.equal(element('start').disabled,false);
+console.log('PASS Failed image decoding keeps the loading screen open and retry recovers');
+})();
+})().catch(error=>{console.error(error);process.exitCode=1;});
