@@ -91,3 +91,17 @@
 .overlay.ending.victory h2 .end-line{color:#f2d17d;text-shadow:0 2px 5px #17120c,0 0 18px #d4ac4533}.overlay.ending.victory h2 .victory-second{color:#f6ebc9}.overlay.ending.victory h2 .retry-line{color:#dce6ad}.overlay.ending.victory p{color:#ded6bd}.overlay.ending.victory .result-stats dt{color:#ddd2b1}.overlay.ending.victory .result-stats dd{color:#f2d17d}.overlay.ending.victory .primary{background:#d6bb71;color:#30281c;border-color:#ead18a;box-shadow:0 4px 0 #544122}.overlay.ending.victory .primary:hover{background:#e0c783}
 
 .debug-options{flex-wrap:wrap;justify-content:center}.debug-invincible{display:flex;align-items:center;gap:7px;cursor:pointer;white-space:nowrap}.debug-invincible input{width:18px;height:18px;margin:0;accent-color:#8b7840}.debug-invincible input:focus-visible{outline:2px solid #8b7840;outline-offset:3px}
+
+/* Mobile play fills the webpage viewport, including pause and results. */
+@media(max-width:650px),(pointer:coarse){
+  body.game-active{overflow:hidden;overscroll-behavior:none}
+  body.game-active header,body.game-active .game-heading,body.game-active footer,body.game-active .bottom{display:none}
+  .arena.playing{position:fixed;inset:0;width:100%;height:100dvh;min-height:0;max-height:none;margin:0;border:0;border-radius:0;box-shadow:none;z-index:30}
+  .arena.playing .touch-controls{display:block}
+  .arena.playing .hud{top:max(16px,env(safe-area-inset-top));left:max(16px,env(safe-area-inset-left));right:max(16px,env(safe-area-inset-right))}
+  .arena.playing #stick{left:max(23px,env(safe-area-inset-left));bottom:calc(28px + env(safe-area-inset-bottom))}
+  .arena.playing .touch-buttons{right:max(20px,env(safe-area-inset-right));bottom:calc(30px + env(safe-area-inset-bottom))}
+  .arena.playing .charge-panel{left:max(23px,env(safe-area-inset-left));bottom:calc(153px + env(safe-area-inset-bottom));width:145px}
+  .arena.playing .world-label{display:none}
+  .arena.playing .overlay{padding-top:max(18px,env(safe-area-inset-top));padding-bottom:max(18px,env(safe-area-inset-bottom))}
+}
