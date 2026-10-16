@@ -101,7 +101,7 @@
   .arena.playing .hud{top:max(16px,env(safe-area-inset-top));left:max(16px,env(safe-area-inset-left));right:max(16px,env(safe-area-inset-right))}
   .arena.playing #stick{left:max(23px,env(safe-area-inset-left));bottom:calc(28px + env(safe-area-inset-bottom))}
   .arena.playing .touch-buttons{right:max(20px,env(safe-area-inset-right));bottom:calc(30px + env(safe-area-inset-bottom))}
-  .arena.playing .charge-panel{left:max(23px,env(safe-area-inset-left));bottom:calc(153px + env(safe-area-inset-bottom));width:145px}
+  .arena.playing .charge-panel{left:max(16px,env(safe-area-inset-left));top:calc(max(16px,env(safe-area-inset-top)) + 60px);bottom:auto;width:110px;padding:3px}.arena.playing .charge-panel .charge-bars>div{height:9px}
   .arena.playing .world-label{display:none}
   .arena.playing .overlay{padding-top:max(18px,env(safe-area-inset-top));padding-bottom:max(18px,env(safe-area-inset-bottom))}
 }
