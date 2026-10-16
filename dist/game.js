@@ -30,7 +30,7 @@ floorTile.onload=()=>{
 floorTile.src='assets/floor-tile-v1.png';
 function newPlayer(){return {x:0,y:0,z:0,vz:0,hp:5,inv:0,down:0,downPose:'slip',slipX:0,slipY:0,slipCooldown:0,face:0,jumpLock:0};}
 player=newPlayer();
-function characterScale(){return window.matchMedia?.('(max-width: 650px), (pointer: coarse)').matches ? .6 : 1;}
+function characterScale(){return window.matchMedia?.('(max-width: 650px), (pointer: coarse)').matches ? .7 : 1;}
 function resize(){const b=canvas.getBoundingClientRect();W=b.width;H=b.height;dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);}
 new ResizeObserver(resize).observe(canvas);
 function unlockAudio(){if(!sound)return;try{audioCtx ||= new (window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume().catch(()=>{});}catch{}}
