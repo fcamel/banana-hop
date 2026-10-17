@@ -273,19 +273,27 @@ function drawBossGround(){
   const targets=boss.phase==='teleport-aim'?[boss.teleportTarget]:boss.phase==='clone-aim'?boss.cloneTargets:boss.cinematic?.targets||[];
   for(const target of targets){const p=screen(target.x,target.y);ellipse(p.x,p.y,45*characterScale(),26*characterScale(),'#a5ce7522','#c3e29c');}
 }
-function drawBossShield(p,scale,actor=boss){
+function drawBossShield(p,scale,actor=boss,behind=false){
   const active=actor.phase==='shield',progress=active?1:clamp(1-actor.time,0,1),radius=(75+progress*(bossShieldRadius-75))*scale;
-  ctx.save();ctx.translate(p.x,p.y-10*scale);
+  ctx.save();ctx.translate(p.x,p.y-70*scale);
+  if(behind){
+    // A translucent body-height dome, using one fill rather than blur filters.
+    const height=(82+progress*28)*scale,centerY=-12*scale;
+    ellipse(0,centerY,radius,height,active?'#a3e4cf18':'#a3e4cf0c',active?'#b0ead132':'#b0ead11c');
+  }
   // Eight larger upright flames orbit with position changes only; no blur or particles.
   for(let i=0;i<8;i++){
-    const a=i*TAU/8+bossElapsed*1.5,x=Math.cos(a)*radius,y=Math.sin(a)*radius*.72;
-    ctx.save();ctx.translate(x,y);ctx.scale(1.5,1.5);
+    const a=i*TAU/8+bossElapsed*1.5,depth=Math.sin(a);
+    if((depth<0)!==behind)continue;
+    const x=Math.cos(a)*radius,y=depth*radius*.72,flameScale=1.35+Math.max(0,depth)*.15;
+    ctx.save();ctx.translate(x,y);ctx.scale(flameScale,flameScale);
     const lift=(32+8*Math.sin(bossElapsed*5+i*1.7))*scale;
-    ctx.globalAlpha=active?.85:.35+progress*.3;ctx.fillStyle=i%2?'#9fc875':'#bddc8b';ctx.beginPath();ctx.moveTo(-9*scale,8*scale);ctx.quadraticCurveTo(-14*scale,-4*scale,-6*scale,-20*scale);ctx.quadraticCurveTo(-5*scale,-12*scale,-1*scale,-10*scale);ctx.quadraticCurveTo(7*scale,-25*scale,4*scale,-lift);ctx.quadraticCurveTo(18*scale,-11*scale,10*scale,7*scale);ctx.quadraticCurveTo(0,15*scale,-9*scale,8*scale);ctx.fill();
+    ctx.globalAlpha=(active?.85:.35+progress*.3)*(behind?.7:1);ctx.fillStyle=i%2?'#9fc875':'#bddc8b';ctx.beginPath();ctx.moveTo(-9*scale,8*scale);ctx.quadraticCurveTo(-14*scale,-4*scale,-6*scale,-20*scale);ctx.quadraticCurveTo(-5*scale,-12*scale,-1*scale,-10*scale);ctx.quadraticCurveTo(7*scale,-25*scale,4*scale,-lift);ctx.quadraticCurveTo(18*scale,-11*scale,10*scale,7*scale);ctx.quadraticCurveTo(0,15*scale,-9*scale,8*scale);ctx.fill();
     ctx.fillStyle='#e1edb3';ctx.beginPath();ctx.moveTo(-3*scale,5*scale);ctx.quadraticCurveTo(0,-5*scale,2*scale,-13*scale);ctx.quadraticCurveTo(7*scale,6*scale,-3*scale,5*scale);ctx.fill();
     ctx.restore();
   }
-  ctx.globalAlpha=1;ctx.fillStyle='#d6e9af';ctx.font=`bold ${Math.max(12,14*scale)}px sans-serif`;ctx.textAlign='center';ctx.fillText(active?'鬼火護罩':'護罩蓄力',0,-195*scale);ctx.restore();
+  if(!behind){ctx.globalAlpha=1;ctx.fillStyle='#d6e9af';ctx.font=`bold ${Math.max(12,14*scale)}px sans-serif`;ctx.textAlign='center';ctx.fillText(active?'鬼火護罩':'護罩蓄力',0,-150*scale);}
+  ctx.restore();
 }
 function drawBossTeleportTrail(p,scale){
   const target=screen(boss.teleportTarget.x,boss.teleportTarget.y),length=Math.hypot(target.x-p.x,target.y-p.y)||1,dx=(target.x-p.x)/length,dy=(target.y-p.y)/length,progress=clamp(1-boss.time/.3,0,1);
@@ -325,6 +333,7 @@ function drawBossActor(actor=boss){
   if(!isInView(actor,400))return;
   const p=screen(actor.x,actor.y),scale=characterScale(),height=190,width=height*bossSprite.naturalWidth/bossSprite.naturalHeight;
   if(actor===boss&&boss.phase==='teleport-aim')drawBossTeleportTrail(p,scale);
+  if(['shield-aim','shield'].includes(actor.phase))drawBossShield(p,scale,actor,true);
   ctx.save();ctx.translate(p.x,p.y);ctx.scale(scale,scale);ellipse(0,8,45,13,'#20271d66');ctx.translate(0,-(actor.z||0));
   if(actor===boss&&isBossEntrance()){
     const progress=actor.phase==='entrance'?clamp(1-actor.time/3,0,1):1;
