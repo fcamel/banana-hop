@@ -1,12 +1,13 @@
 {
   "name": "banana-hop",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "香蕉踩香蕉 — a 120-second banana survival browser game",
   "scripts": {
-    "check": "node --check dist/game.js && node --check dist/boss.js && node --check dist/surf.js",
+    "check": "node --check dist/game.js && node --check dist/boss.js && node --check dist/surf.js && node --check scripts/version.cjs && node scripts/version.cjs --check",
     "test": "node tests/game.test.cjs",
-    "start": "python3 -m http.server 8893 --bind 127.0.0.1 --directory dist"
+    "start": "python3 -m http.server 8893 --bind 127.0.0.1 --directory dist",
+    "version:patch": "node scripts/version.cjs patch"
   },
   "engines": {
     "node": ">=22"

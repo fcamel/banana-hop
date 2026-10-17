@@ -127,3 +127,5 @@
 .game-version{display:none;position:absolute;right:36px;bottom:34px;font-size:17px;font-weight:800;letter-spacing:1px;color:#5c5344;z-index:1;line-height:1.3}.overlay.intro-screen .game-version{display:block}.arena.playing .game-version{display:none}
 
 @media(max-width:650px),(pointer:coarse){#stick{width:136px;height:136px}#knob{width:52px;height:52px;left:42px;top:42px}.arena.playing #stick{left:max(16px,env(safe-area-inset-left));bottom:calc(24px + env(safe-area-inset-bottom))}}
+
+.mobile-gate{position:fixed;inset:0;z-index:2000;display:grid;place-items:center;padding:24px;background:#242923;color:#dfebc9;text-align:center}.mobile-gate[hidden]{display:none}.mobile-gate span{display:block;font-size:64px}.mobile-gate p{font-size:20px;font-weight:700}.mobile-gate button{font-size:17px}.mobile-gate button[hidden]{display:none}:fullscreen{background:#242923}

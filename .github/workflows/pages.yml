@@ -25,6 +25,14 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build optimized transparent WebP assets
+        run: |
+          python -m pip install Pillow==11.3.0
+          python scripts/optimize-assets.py
       - name: Check JavaScript syntax
         run: npm run check
       - name: Run game tests

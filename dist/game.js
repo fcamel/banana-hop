@@ -12,16 +12,16 @@ let stats=freshStats();
 const heroSprite=new Image(),heroSlipSprite=new Image(),heroHurtSprite=new Image(),durianSprite=new Image(),enemySprite=new Image(),groundSprite=new Image(),floorTile=new Image();
 const bossSprite=new Image(),heroSurfSprite=new Image(),surfItemSprite=new Image();
 const gameAssets=[
-  {image:heroSurfSprite,src:'assets/hero-surf-v1.png'},
-  {image:surfItemSprite,src:'assets/surfboard-v1.png'},
-  {image:bossSprite,src:'assets/boss-necromancer-v1.png'},
-  {image:heroSprite,src:'assets/hero-front-v1.png'},
-  {image:heroSlipSprite,src:'assets/hero-slip-v1.png'},
-  {image:heroHurtSprite,src:'assets/hero-hurt-v1.png'},
-  {image:durianSprite,src:'assets/durian-v1.png'},
-  {image:enemySprite,src:'assets/enemy-phantoms-v1.png'},
-  {image:groundSprite,src:'assets/ground-items-v1.png'},
-  {image:floorTile,src:'assets/floor-tile-v1.png'}
+  {image:heroSurfSprite,src:'assets/hero-surf-v1.webp'},
+  {image:surfItemSprite,src:'assets/surfboard-v1.webp'},
+  {image:bossSprite,src:'assets/boss-necromancer-v1.webp'},
+  {image:heroSprite,src:'assets/hero-front-v1.webp'},
+  {image:heroSlipSprite,src:'assets/hero-slip-v1.webp'},
+  {image:heroHurtSprite,src:'assets/hero-hurt-v1.webp'},
+  {image:durianSprite,src:'assets/durian-v1.webp'},
+  {image:enemySprite,src:'assets/enemy-phantoms-v1.webp'},
+  {image:groundSprite,src:'assets/ground-items-v1.webp'},
+  {image:floorTile,src:'assets/floor-tile-v1.webp'}
 ];
 let assetsReady=false,loadingPromise=null,assetLoadAttempt=0,mutedFloor=null;
 function prepareFloorTile(){
@@ -207,7 +207,7 @@ function currentMusicBuffer(){
 }
 function syncMusic(){
   if(musicSource){try{musicGain.gain.setTargetAtTime(0,audioCtx.currentTime,.008);musicSource.stop(audioCtx.currentTime+.04);}catch{}musicSource=null;musicGain=null;}
-  if(state!=='playing'||!sound)return;
+  if(state!=='playing'||mobilePlayBlocked||!sound)return;
   unlockAudio();if(!audioCtx)return;
   try{
     const buffer=currentMusicBuffer();
@@ -505,9 +505,9 @@ function burst(x,y,color,n=12){for(let i=0;i<n;i++){const a=Math.random()*TAU,s=
 // Slipping never grants damage immunity; the player remains vulnerable while down.
 function slip(actor,angle){actor.down=.7;actor.slipCooldown=1.05;const speed=isLargeBanana(actor)?288:480;actor.slipX=Math.cos(angle)*speed;actor.slipY=Math.sin(angle)*speed;if(actor===player){player.recoil=0;player.downPose='slip';player.z=0;player.vz=0;combo=0;comboLife=0;sfx('slip');notify('滑倒！小心敵人');}}
 function slide(actor,dt){const step=Math.min(dt,actor.down);const decay=Math.exp(-1.5*step),travel=(1-decay)/1.5;actor.x+=actor.slipX*travel;actor.y+=actor.slipY*travel;actor.slipX*=decay;actor.slipY*=decay;actor.down=Math.max(0,actor.down-dt);}
-function hurt(reason){if(state!=='playing'||isBossWorldFrozen()||isBossCinematic()||invincibleMode||player.inv>0||special)return;player.hp--;player.recoil=0;player.stompGuard=0;player.downPose='hurt';player.inv=1.8;if(player.down<=0){player.down=.5;player.slipX=Math.cos(player.face)*170;player.slipY=Math.sin(player.face)*170;}player.z=0;player.vz=0;combo=0;comboLife=0;shake=.22;burst(player.x,player.y,'#fff2b0');sfx('hurt');notify(reason+' −1 ♥');if(player.hp<=0)finish(false);}
+function hurt(reason,source='enemy'){if(state!=='playing'||isBossWorldFrozen()||(source==='boss'&&isBossCinematic())||invincibleMode||player.inv>0||special)return;player.hp--;player.recoil=0;player.stompGuard=0;player.downPose='hurt';player.inv=2.5;if(player.down<=0){player.down=.5;player.slipX=Math.cos(player.face)*170;player.slipY=Math.sin(player.face)*170;}player.z=0;player.vz=0;combo=0;comboLife=0;shake=.22;burst(player.x,player.y,'#fff2b0');sfx('hurt');notify(reason+' −1 ♥');if(player.hp<=0)finish(false);}
 function hitEnemy(e,isStomp){
-  if(isBossCinematic()||e.hp<=0||e.hit>0||e.type==='durian')return false;
+  if(isBossWorldFrozen()||e.hp<=0||e.hit>0||e.type==='durian')return false;
   const originalType=e.type;
   e.hp--;e.hit=.24;burst(e.x,e.y,bananaColor(e),8);
   if(isStomp){combo=comboLife>0?combo+1:1;comboLife=1.5;stats.maxCombo=Math.max(stats.maxCombo,combo);stats.stompHits++;const gain=combo===1?20:10;const before=charge;charge=Math.min(100,charge+gain);if(Math.floor(charge/100)>Math.floor(before/100))sfx('charge');texts.push({x:e.x,y:e.y,z:60,text:`+${(gain/100).toFixed(1)} 層`,life:.7});sfx('stomp',1+Math.min(combo,10)*.08);}
@@ -797,7 +797,7 @@ function separateEnemies(){
   }
   return checks;
 }
-function update(dt){if(state!=='playing')return;if(isBossWorldFrozen()){if(isBossEntrance())updateBossEntrance(dt);else updateBossCinematic(dt);return;}const pickupPath={x:player.x,y:player.y,grounded:player.z<=0,dashing:!!special,surfing:special?.mode==='surf'};const oldRate=musicRate();elapsed+=dt;if(!boss&&elapsed>=gameDuration){elapsed=gameDuration;startBossBattle();return;}if(oldRate!==musicRate())updateMusicRate();const enemyDt=dt*gameTempo();player.inv=Math.max(0,player.inv-dt);player.stompGuard=Math.max(0,player.stompGuard-dt);player.jumpLock=Math.max(0,player.jumpLock-dt);player.slipCooldown=Math.max(0,player.slipCooldown-dt);comboLife-=dt;if(comboLife<=0)combo=0;noticeLife-=dt;if(noticeLife<=0)$('notice').textContent='';shake=Math.max(0,shake-dt);
+function update(dt){if(state!=='playing'||mobilePlayBlocked)return;if(isBossWorldFrozen()){if(isBossEntrance())updateBossEntrance(dt);else updateBossCinematic(dt);return;}const pickupPath={x:player.x,y:player.y,grounded:player.z<=0,dashing:!!special,surfing:special?.mode==='surf'};const oldRate=musicRate();elapsed+=dt;if(!boss&&elapsed>=gameDuration){elapsed=gameDuration;startBossBattle();return;}if(oldRate!==musicRate())updateMusicRate();const enemyDt=dt*gameTempo();player.inv=Math.max(0,player.inv-dt);player.stompGuard=Math.max(0,player.stompGuard-dt);player.jumpLock=Math.max(0,player.jumpLock-dt);player.slipCooldown=Math.max(0,player.slipCooldown-dt);comboLife-=dt;if(comboLife<=0)combo=0;noticeLife-=dt;if(noticeLife<=0)$('notice').textContent='';shake=Math.max(0,shake-dt);
 updatePeels(dt);
 let mx=(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+stick.x,my=(keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0)+stick.y;let m=Math.hypot(mx,my);if(m>1){mx/=m;my/=m;}if(m>.1)player.face=Math.atan2(my,mx);
 if(special){
@@ -808,12 +808,12 @@ if(special){
   collectBunchPickups(pickupPath);collectSurfPickups(pickupPath);
   s.trail.push({x:player.x,y:player.y});if(s.trail.length>24)s.trail.shift();
   if(boss)for(const target of [boss,...bossClones]){
-    if(s.hits.has(target)||segmentDistance(target,dashFromX,dashFromY,player.x,player.y)>76*characterScale())continue;
+    if(s.hits.has(target)||segmentDistance(target,dashFromX,dashFromY,player.x,player.y)>96*characterScale())continue;
     if(hitBoss(target,false))s.hits.add(target);
     if(state!=='playing'||isBossWorldFrozen())return;
   }
   for(const e of enemies){
-    if(isBossCinematic()||e.hp<=0||e.carriedBy!==undefined||(s.mode==='surf'?segmentDistance(e,dashFromX,dashFromY,player.x,player.y):dist(player,e))>((isLargeBanana(e)?76:60)*characterScale()))continue;
+    if(e.hp<=0||e.carriedBy!==undefined||(s.mode==='surf'?segmentDistance(e,dashFromX,dashFromY,player.x,player.y):dist(player,e))>((isLargeBanana(e)?96:80)*characterScale()))continue;
     if(s.hits.has(e.id))continue;
     if(e.type!=='durian'&&e.hit>0)continue;
     s.hits.add(e.id);
@@ -865,8 +865,42 @@ function finish(win){
 function tickEnding(dt){endElapsed=Math.min(2,endElapsed+dt);$('endWipe').style.clipPath=`inset(0 0 ${(1-endElapsed/2)*100}% 0)`;if(endElapsed>=2)$('start').disabled=false;}
 
 function pause(){if(state==='playing'){$('overlayText').hidden=false;$('overlay').classList.add('intro-screen');$('resultStats').hidden=true;state='paused';updateSurfHUD();$('finalCountdown').hidden=true;syncMusic();keys.clear();stick.x=stick.y=0;$('knob').style.transform='';$('overlayTitle').textContent='香蕉休息中';$('overlayText').textContent=characterScale()<1?'左側搖桿移動 · 右側跳踩／衝刺／衝浪':'移動：WASD／方向鍵 · 跳踩：空白鍵 · 衝刺：J · 衝浪：K';$('introRules').hidden=true;$('start').innerHTML='繼續蹦跳 <span>↗</span>';$('overlay').hidden=false;$('pause').textContent='▶';}else if(state==='paused'){$('overlay').classList.remove('intro-screen');state='playing';syncMusic();updateHUD();$('overlay').hidden=true;$('pause').textContent='Ⅱ';canvas.focus();}}
+// Mobile sessions require landscape; use native fullscreen where the browser supports it.
+let mobilePlayBlocked=false,mobilePlayRequested=false,mobilePlayPending=null;
+function mobileViewportStatus(){
+  const mobile=characterScale()<1,landscape=(window.innerWidth||W)>(window.innerHeight||H);
+  const native=!!document.documentElement?.requestFullscreen&&document.fullscreenEnabled!==false;
+  return {mobile,landscape,native,fullscreen:!!document.fullscreenElement};
+}
+function updateMobileViewport(){
+  const view=mobileViewportStatus(),active=mobilePlayRequested&&view.mobile;
+  const blocked=active&&(!view.landscape||(view.native&&!view.fullscreen));
+  const changed=blocked!==mobilePlayBlocked;mobilePlayBlocked=blocked;
+  $('mobileGate').hidden=!blocked;
+  $('mobileGateText').textContent=!view.landscape?'請將手機轉為橫向遊玩':'請進入全螢幕繼續遊玩';
+  $('mobileFullscreen').hidden=!view.native||view.fullscreen;
+  if(blocked){keys.clear();stick.x=stick.y=0;$('knob').style.transform='';}
+  if(changed)syncMusic();
+  if(!blocked&&mobilePlayPending){const action=mobilePlayPending;mobilePlayPending=null;action();}
+}
+async function enterMobilePlay(){
+  mobilePlayRequested=true;
+  const view=mobileViewportStatus();
+  try{if(view.mobile&&view.native&&!view.fullscreen)await document.documentElement.requestFullscreen();}catch{}
+  try{if(view.mobile)await window.screen?.orientation?.lock?.('landscape');}catch{}
+  updateMobileViewport();resize();
+}
+function startRequested(){
+  if(state==='over'&&endElapsed<2)return;
+  const action=()=>state==='paused'?pause():reset();
+  if(characterScale()>=1){action();return;}
+  unlockAudio();mobilePlayPending=action;enterMobilePlay();
+}
+$('mobileFullscreen').addEventListener('click',enterMobilePlay);
+window.addEventListener('resize',updateMobileViewport);
+document.addEventListener('fullscreenchange',updateMobileViewport);
 $('loadingRetry').addEventListener('click',loadGameAssets);
-$('start').addEventListener('click',()=>{if(state==='over'&&endElapsed<2)return;state==='paused'?pause():reset();});$('pause').addEventListener('click',pause);$('help').addEventListener('click',()=>{if(state==='playing')pause();else if(state==='intro')notify('踩熟香蕉集氣 · 香蕉皮會滑倒，撞到敵人會扣血');});function setVolume(value){
+$('start').addEventListener('click',startRequested);$('pause').addEventListener('click',pause);$('help').addEventListener('click',()=>{if(state==='playing')pause();else if(state==='intro')notify('踩熟香蕉集氣 · 香蕉皮會滑倒，撞到敵人會扣血');});function setVolume(value){
   const wasSound=sound;
   volumeLevel=clamp(Number(value)||0,0,100)/100;sound=volumeLevel>0;
   if(sound)lastVolumeLevel=volumeLevel;
