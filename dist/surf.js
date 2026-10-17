@@ -57,6 +57,7 @@ function feedSurf(s,ax,ay){
     eaten++;return false;
   });
   if(eaten){
+    stats.surfPeels+=eaten;
     const before=s.duration;s.duration=Math.min(4,s.duration+eaten*.2);s.feedFlash=.45;
     const gain=s.duration-before;
     burst(player.x,player.y,'#c7f4d7',Math.min(18,8+eaten*2));sfx('pickup');

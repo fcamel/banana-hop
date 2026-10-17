@@ -110,6 +110,56 @@ test('Both boss rituals allow actual minion collisions, stomps and ultimate hits
     run("player.hp=1;hurt('minion finishes player')");assert.equal(run('state'),'over');assert.equal(run('player.hp'),0);
   }
 });
+test('Descending stomps use enemy positions after movement before contact damage',()=>{
+  for(const mobile of [false,true])for(const frame of [1/60,.033]){
+    context.landingMobile=mobile;context.landingFrame=frame;
+    run("window.matchMedia=()=>({matches:landingMobile});reset();enemies=[];startBossBattle();boss.phase='rest';boss.time=999;boss.x=1000;boss.y=1000;elapsed=120;player.x=0;player.y=0;player.z=6;player.vz=-50;player.inv=0;var enteringBanana=spawn(0,'normal',{x:30*characterScale()+.1,y:0});enteringBanana.hp=1;enteringBanana.speed=160;update(landingFrame)");
+    assert.equal(run('player.hp'),5);assert.equal(run('enteringBanana.hp'),0);assert.equal(run('stats.stompHits'),1);assert.equal(run('player.vz'),310);
+  }
+  run('delete window.matchMedia');
+});
+test('Moving out of stomp range does not cause a stale-position stomp',()=>{
+  run("reset();startBossBattle();boss.phase='rest';boss.time=999;boss.x=1000;boss.y=1000;enemies=[];player.x=0;player.y=0;player.z=6;player.vz=-50;var leavingBanana=spawn(0,'normal',{x:29,y:0});leavingBanana.hp=1;leavingBanana.knock=1;leavingBanana.kx=400;leavingBanana.ky=0;update(.033)");
+  assert.equal(run('leavingBanana.hp'),1);assert.equal(run('stats.stompHits'),0);assert.equal(run('player.hp'),5);
+});
+test('Time-growing small and red banana movement caps at an effective speed of 188',()=>{
+  for(const time of [120,240,300,1000]){
+    context.cappedTime=time;
+    run("reset();startBossBattle();boss.phase='rest';boss.time=999;boss.x=1000;boss.y=-1000;enemies=[];elapsed=cappedTime;var cappedWalker=spawn(0,'normal',{x:900,y:0});var cappedRed=spawn(0,'thrower',{x:-900,y:0});var walkerFrom=cappedWalker.x,redFrom=cappedRed.x;update(.1)");
+    assert.ok(run('Math.abs(cappedWalker.x-walkerFrom)')<=18.8+1e-8);assert.ok(run('Math.abs(cappedRed.x-redFrom)')<=18.8+1e-8);assert.ok(run('enemyWalkSpeed(cappedWalker)')<205);
+  }
+});
+test('Yellow summon capacity is shared, preserves unconsumed peels and blocks revival selection',()=>{
+  run("reset();startBossBattle();enemies=[];var yellowCapacity=bossYellowLimit();for(let i=0;i<yellowCapacity-4;i++){var yellowAtCap=spawn(0,'normal',{x:800+i,y:800});yellowAtCap.hp=1}peels=[];for(let i=0;i<24;i++)peels.push({id:serial++,x:boss.x+i,y:boss.y,age:1});boss.hp=2;boss.nextClone=Infinity;boss.nextShield=Infinity;boss.nextTeleport=Infinity;boss.move=1;beginBossMove();var capacityCaster=spawnBossClone({x:boss.x,y:boss.y});capacityCaster.nextShield=Infinity;capacityCaster.move=1;beginBossMove(capacityCaster);releaseBossRevival();releaseBossRevival(capacityCaster)");
+  assert.equal(run('bossYellowCount()'),run('yellowCapacity'));assert.equal(run('peels.length'),20);assert.equal(run('bossSummon({x:0,y:0})'),false);
+  run('boss.move=1;beginBossMove();capacityCaster.move=1;beginBossMove(capacityCaster)');assert.notEqual(run('boss.phase'),'revive');assert.notEqual(run('capacityCaster.phase'),'revive');
+  run("boss.hp=1;var previousCapRandom=Math.random;Math.random=()=>.5;beginBossMove();Math.random=previousCapRandom");assert.notEqual(run('boss.phase'),'revive');
+  run('enemies[0].hp=0;boss.hp=2;boss.move=1;beginBossMove()');assert.equal(run('boss.phase'),'revive');
+});
+test('Yellow summon budget follows viewport area and phone sprite scale, capped at sixty',()=>{
+  for(const [width,height,mobile,expected] of [[1156,666,false,55],[667,375,true,36],[844,390,true,48],[932,430,true,59],[2000,1200,false,60]]){
+    context.budgetWidth=width;context.budgetHeight=height;context.budgetMobile=mobile;
+    run('W=budgetWidth;H=budgetHeight;window.matchMedia=()=>({matches:budgetMobile})');assert.equal(run('bossYellowLimit()'),expected);
+  }
+  run('delete window.matchMedia;resize()');
+});
+test('Offscreen yellow bananas count toward the budget and resizing does not delete existing enemies',()=>{
+  run("reset();startBossBattle();enemies=[];W=1156;H=666;for(let i=0;i<55;i++){var distantYellow=spawn(0,'normal',{x:1200,y:1200});distantYellow.hp=1}var beforeResize=enemies.length;W=800;H=600");
+  assert.equal(run('bossYellowLimit()'),34);assert.equal(run('bossSummon({x:0,y:0})'),false);assert.equal(run('enemies.length'),55);
+  run('W=2000;H=1200');assert.equal(run('bossYellowLimit()'),60);assert.equal(run('bossSummon({x:0,y:0})'),true);assert.equal(run('bossYellowCount()'),56);
+  run('resize()');
+});
+test('Battle peaks count living offscreen enemies, durians and boss bodies, and retain the maximum',()=>{
+  run("reset();enemies=[];stats=freshStats();spawn(0,'normal',{x:1200,y:1200});spawn(0,'durian',{x:-1200,y:-1200});var deadPeakEnemy=spawn(0,'normal',{x:0,y:0});deadPeakEnemy.hp=0;startBossBattle();spawnBossClone({x:300,y:0});spawnBossClone({x:-300,y:0});peels=[{x:0,y:0},{x:1,y:1}];trackBattlePeaks()");
+  assert.equal(run('stats.maxEnemies'),5);assert.equal(run('stats.maxPeels'),2);
+  run('enemies=[];bossClones=[];peels=[];trackBattlePeaks()');assert.equal(run('stats.maxEnemies'),5);assert.equal(run('stats.maxPeels'),2);
+});
+test('Fun statistics count player slips and consumed surf peels, reset per game and omit damage',()=>{
+  run("reset();enemies=[];stats=freshStats();slip(player,0);var slippingEnemy=spawn(0,'normal',{x:500,y:500});slip(slippingEnemy,0);hurt('first');hurt('blocked');surfStock=1;activateSurf();peels=[{x:player.x,y:player.y,age:1},{x:player.x+1,y:player.y,age:1},{x:player.x,y:player.y,age:1,ritual:true}];feedSurf(special,player.x,player.y)");
+  assert.equal(run('stats.slips'),1);assert.equal(run('player.hp'),4);assert.equal(run('stats.surfPeels'),2);
+  run('finish(false)');for(const title of ['場上最多敵人','場上最多蕉皮','滑倒次數','衝浪吸收蕉皮'])assert.ok(element('resultStats').innerHTML.includes(title));assert.equal((element('resultStats').innerHTML.match(/<dt>/g)||[]).length,11);assert.ok(!element('resultStats').innerHTML.includes('受到傷害'));
+  run('reset()');assert.equal(run('stats.slips'),0);assert.equal(run('stats.surfPeels'),0);assert.equal(run('stats.maxEnemies'),7);
+});
 test('Insufficient charge cannot activate',()=>{run('reset();charge=99;activate()');assert.equal(run('special'),null);assert.equal(run('charge'),99);});
 test('First stomp gives 0.2 and consecutive stomp gives 0.1; unripe banana needs two',()=>{run("reset();enemies=[];const e={id:999,x:0,y:0,hp:2,type:'thick',hit:0,color:'#fff'};hitEnemy(e,true)");assert.equal(run('e.hp'),1);assert.equal(run('charge'),20);run('e.hit=0;hitEnemy(e,true)');assert.equal(run('e.hp'),0);assert.equal(run('charge'),30);assert.equal(run('peels.length'),1);});
 test('Enemy damage knocks down and gives immunity',()=>{run("reset();hurt('撞到香蕉')");assert.equal(run('player.hp'),4);assert.equal(run('player.down'),.5);assert.equal(run('player.inv'),2.5);run("hurt('撞到香蕉')");assert.equal(run('player.hp'),4);});

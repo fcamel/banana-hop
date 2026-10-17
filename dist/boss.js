@@ -29,7 +29,7 @@ function startBossBattle(debug=false){
   if(debug)for(const x of [.25,.75])for(const y of [.25,.75])for(let i=0;i<3;i++){
     const point=bossViewportPoint(W*x+(i-1)*26,H*y+(i===1?-20:15));peels.push({id:serial++,...point,age:.6});
   }
-  $('finalCountdown').hidden=true;sfx('warning');syncMusic();updateHUD();
+  trackBattlePeaks();$('finalCountdown').hidden=true;sfx('warning');syncMusic();updateHUD();
 }
 function prepareDebugBossStage(hp){
   if(!debugUnlocked||!boss||![5,2].includes(hp))return;
@@ -63,17 +63,22 @@ function bossCloneReady(){
 function beginBossCloneCast(){
   boss.phase='clone-aim';boss.time=1;boss.fireRows=0;boss.cloneTargets=planBossClones();boss.cloneTarget=boss.cloneTargets[0];sfx('warning');
 }
+function bossYellowLimit(){
+  const scale=characterScale();
+  return Math.min(60,Math.floor(W*H*.5/(72*96*scale*scale)));
+}
+function bossYellowCount(){return enemies.reduce((count,e)=>count+(e.type==='normal'&&e.hp===1?1:0),0);}
 function beginBossMove(actor=boss){
   if(actor===boss&&bossCloneReady()){beginBossCloneCast();return;}
-  let move;
+  let move;const canRevive=bossYellowCount()<bossYellowLimit();
   if(boss.hp===1){
-    const moves=['sea-aim','revive','fire-aim'];
+    const moves=canRevive?['sea-aim','revive','fire-aim']:['sea-aim','fire-aim'];
     if(bossElapsed>=actor.nextShield)moves.push('shield-aim');
     if(actor===boss&&bossElapsed>=actor.nextTeleport)moves.push('teleport-aim');
     move=moves[Math.floor(Math.random()*moves.length)];
   }else if(boss.hp<=6&&bossElapsed>=actor.nextShield)move='shield-aim';
   else if(actor===boss&&boss.hp<=7&&bossElapsed>=actor.nextTeleport)move='teleport-aim';
-  else move=['sea-aim','revive','fire-aim'][actor.move++%3];
+  else{do{move=['sea-aim','revive','fire-aim'][actor.move++%3];}while(move==='revive'&&!canRevive);}
   actor.phase=move;actor.time=move==='revive'?3:move==='teleport-aim'?.3:1;
   if(move==='teleport-aim')actor.teleportTarget=bossOtherSide(actor);
   if(move==='fire-aim'){const origin=bossFireOrigin(actor);actor.aim=Math.atan2(player.y-origin.y,player.x-origin.x);}
@@ -83,7 +88,7 @@ function beginBossMove(actor=boss){
   sfx('warning');
 }
 function bossSummon(point){
-  if(enemies.length>=110)return false;
+  if(enemies.length>=110||bossYellowCount()>=bossYellowLimit())return false;
   const e=spawn(0,'normal',point);e.hp=1;e.color=bananaColor(e);e.speed=65;e.rise=.6;e.hit=.6;burst(e.x,e.y,'#b8d889',8);return true;
 }
 function releaseBossRevival(actor=boss){

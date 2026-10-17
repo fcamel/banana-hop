@@ -7,8 +7,15 @@ let enemies=[],peels=[],particles=[],texts=[],special=null,player,keys=new Set()
 const arenaSize=1250,lastSfx=new Map(),gameDuration=120;
 let debugUnlocked=false,debugCode='',invincibleMode=false;
 let pickups=[],orbitPeels=[],nextPickupAt=17,nextBunchSide=0;
-function freshStats(){return {maxCombo:0,stompKills:0,stompHits:0,dashes:0,bunches:0,surfs:0};}
+function freshStats(){return {maxCombo:0,stompKills:0,stompHits:0,dashes:0,bunches:0,surfs:0,maxEnemies:0,maxPeels:0,slips:0,surfPeels:0};}
 let stats=freshStats();
+function trackBattlePeaks(){
+  let count=boss?.hp>0?1+bossClones.length:0;
+  for(const enemy of enemies)if(enemy.hp>0)count++;
+  stats.maxEnemies=Math.max(stats.maxEnemies,count);
+  stats.maxPeels=Math.max(stats.maxPeels,peels.length);
+}
+
 const heroSprite=new Image(),heroSlipSprite=new Image(),heroHurtSprite=new Image(),durianSprite=new Image(),enemySprite=new Image(),groundSprite=new Image(),floorTile=new Image();
 const bossSprite=new Image(),heroSurfSprite=new Image(),surfItemSprite=new Image();
 const gameAssets=[
@@ -227,9 +234,11 @@ function updateHUD(){updateBossHUD();const t=Math.max(0,Math.ceil(gameDuration-e
   $('hearts').innerHTML=Array.from({length:5},(_,i)=>`<span class="health-banana ${i<player.hp?'filled':'empty'}" aria-hidden="true"><svg viewBox="0 0 34 32"><path d="M7 3C1 14 7 31 23 29C31 28 34 19 32 11C26 21 15 17 13 4Z"/><path class="banana-seam" d="M8 8C7 21 20 28 29 20"/><path class="banana-tip" d="M7 2L13 3L13 7L7 6Z"/></svg></span>`).join('');
   $('hearts').setAttribute('aria-label',`生命 ${player.hp} / 5`);if($('hearts').dataset)$('hearts').dataset.hp=String(player.hp);
 }$('kills').textContent=String(kills).padStart(3,'0');$('bar1').style.width=`${Math.min(charge,100)}%`;$('chargeMeter').setAttribute('aria-valuenow',String(Math.round(charge)));if(charge>=100)$('chargeMeter').classList.add('ready');else $('chargeMeter').classList.remove('ready');$('specialTouch').disabled=charge<100||!!special;updateSurfHUD();$('combo').textContent=combo>1&&comboLife>0?`${combo} 連踩`:'';}
-function reset(){if(!assetsReady)return;boss=null;bossElapsed=0;bossShots=[];bossClones=[];$('overlayText').hidden=false;invincibleMode=debugUnlocked&&!!$('debugInvincible').checked;$('overlay').classList.remove('victory');$('debugOptions').hidden=true;$('modeOptions').hidden=true;$('overlay').classList.remove('intro-screen');stats=freshStats();$('resultStats').hidden=true;lastSfx.clear();unlockAudio();sfx('start');nextDurianAt=10;durianWarnings=[];nextChargerAt=20;nextThrowerAt=30;pickups=[];orbitPeels=[];nextPickupAt=17;nextBunchSide=0;endElapsed=0;$('overlay').classList.remove('ending');$('arena')?.classList.remove('ended');$('endWipe').hidden=true;$('start').disabled=false;player=newPlayer();enemies=[];peels=[];particles=[];texts=[];special=null;elapsed=debugUnlocked?[62,32,12].includes(Number($('debugStart').value))?gameDuration-Number($('debugStart').value):0:0;if(elapsed>0){nextDurianAt=elapsed+2;nextChargerAt=elapsed+2;nextThrowerAt=elapsed+3;nextPickupAt=elapsed+2;}resetSurf();spawnClock=.4/.75;charge=0;kills=0;combo=0;comboLife=0;noticeLife=0;keys.clear();stick.x=stick.y=0;state='playing';syncMusic();$('overlay').hidden=true;$('pause').textContent='Ⅱ';$('arena')?.classList.add('playing');if(characterScale()<1){document.body?.classList.add('game-active');window.scrollTo?.(0,0);resize();}for(let i=0;i<7;i++)spawn(180+Math.random()*180);const debugBossHp=debugUnlocked?({'boss-5':5,'boss-2':2}[$('debugStart').value]):undefined;if($('gameMode').value==='boss'||(debugUnlocked&&$('debugStart').value==='boss')||debugBossHp){elapsed=120;nextPickupAt=122;startBossBattle(true);if(debugBossHp)prepareDebugBossStage(debugBossHp);}updateHUD();canvas.focus();notify(boss?'':characterScale()<1?'左側移動 · 右側跳踩／衝刺 · 撐過 120 秒':'SPACE 跳踩 · J 衝刺 · 撐過 120 秒');}
+function reset(){if(!assetsReady)return;boss=null;bossElapsed=0;bossShots=[];bossClones=[];$('overlayText').hidden=false;invincibleMode=debugUnlocked&&!!$('debugInvincible').checked;$('overlay').classList.remove('victory');$('debugOptions').hidden=true;$('modeOptions').hidden=true;$('overlay').classList.remove('intro-screen');stats=freshStats();$('resultStats').hidden=true;lastSfx.clear();unlockAudio();sfx('start');nextDurianAt=10;durianWarnings=[];nextChargerAt=20;nextThrowerAt=30;pickups=[];orbitPeels=[];nextPickupAt=17;nextBunchSide=0;endElapsed=0;$('overlay').classList.remove('ending');$('arena')?.classList.remove('ended');$('endWipe').hidden=true;$('start').disabled=false;player=newPlayer();enemies=[];peels=[];particles=[];texts=[];special=null;elapsed=debugUnlocked?[62,32,12].includes(Number($('debugStart').value))?gameDuration-Number($('debugStart').value):0:0;if(elapsed>0){nextDurianAt=elapsed+2;nextChargerAt=elapsed+2;nextThrowerAt=elapsed+3;nextPickupAt=elapsed+2;}resetSurf();spawnClock=.4/.75;charge=0;kills=0;combo=0;comboLife=0;noticeLife=0;keys.clear();stick.x=stick.y=0;state='playing';syncMusic();$('overlay').hidden=true;$('pause').textContent='Ⅱ';$('arena')?.classList.add('playing');if(characterScale()<1){document.body?.classList.add('game-active');window.scrollTo?.(0,0);resize();}for(let i=0;i<7;i++)spawn(180+Math.random()*180);const debugBossHp=debugUnlocked?({'boss-5':5,'boss-2':2}[$('debugStart').value]):undefined;if($('gameMode').value==='boss'||(debugUnlocked&&$('debugStart').value==='boss')||debugBossHp){elapsed=120;nextPickupAt=122;startBossBattle(true);if(debugBossHp)prepareDebugBossStage(debugBossHp);}trackBattlePeaks();updateHUD();canvas.focus();notify(boss?'':characterScale()<1?'左側移動 · 右側跳踩／衝刺 · 撐過 120 秒':'SPACE 跳踩 · J 衝刺 · 撐過 120 秒');}
 function gameTempo(time=elapsed){return time>=90?1.5:1;}
 function smallSpawnInterval(time=elapsed){return Math.max(.18,.8-time*.005)/.75;}
+const enemyTimeSpeedCap=188;
+function enemyWalkSpeed(e,tempo=gameTempo()){return Math.min(e.speed*tempo,e.type==='normal'||e.type==='thrower'?enemyTimeSpeedCap:Infinity);}
 function isLargeBanana(e){return e.type==='charger'||e.type==='thrower';}
 const ripenessColors={3:'#81b64c',2:'#c9d66b',1:'#f9d25c'};
 function bananaColor(e){return e.type==='thrower'?'#e26d64':isLargeBanana(e)?ripenessColors[3]:ripenessColors[clamp(e.hp,1,3)];}
@@ -294,7 +303,7 @@ function updateThrower(e,dt,tempo=1){
   e.targetDurian=fruit?.id;
   const target=fruit||player,d=dist(e,target);
   if(fruit&&d<82&&e.throwCooldown<=0){fruit.carriedBy=e.id;fruit.z=50;fruit.x=e.x+(e.facing||1)*48*characterScale();fruit.y=e.y+8;fruit.down=0;fruit.knock=0;e.heldDurian=fruit.id;e.phase='windup';e.phaseTime=.65;sfx('warning');return;}
-  if(d>(fruit?72:100)){const travel=Math.min(Math.max(0,d-(fruit?72:100)),e.speed*dt*tempo);e.x+=(target.x-e.x)/(d||1)*travel;e.y+=(target.y-e.y)/(d||1)*travel;}
+  if(d>(fruit?72:100)){const travel=Math.min(Math.max(0,d-(fruit?72:100)),enemyWalkSpeed(e,tempo)*dt);e.x+=(target.x-e.x)/(d||1)*travel;e.y+=(target.y-e.y)/(d||1)*travel;}
 }
 function updateThrownDurian(e,dt){
   const shot=e.projectile,oldX=e.x,oldY=e.y;shot.t=Math.min(shot.duration,shot.t+dt);
@@ -503,7 +512,7 @@ function drawBunchVector(p){
 function jump(){if(state!=='playing'||isBossWorldFrozen()||special||player.recoil>0||player.down>0||player.z>1||player.jumpLock>0)return;player.vz=350;player.jumpLock=.12;sfx('jump');}
 function burst(x,y,color,n=12){for(let i=0;i<n;i++){const a=Math.random()*TAU,s=30+Math.random()*150;particles.push({x,y,z:8,vx:Math.cos(a)*s,vy:Math.sin(a)*s,vz:80+Math.random()*80,life:.4+Math.random()*.3,color});}}
 // Slipping never grants damage immunity; the player remains vulnerable while down.
-function slip(actor,angle){actor.down=.7;actor.slipCooldown=1.05;const speed=isLargeBanana(actor)?288:480;actor.slipX=Math.cos(angle)*speed;actor.slipY=Math.sin(angle)*speed;if(actor===player){player.recoil=0;player.downPose='slip';player.z=0;player.vz=0;combo=0;comboLife=0;sfx('slip');notify('滑倒！小心敵人');}}
+function slip(actor,angle){actor.down=.7;actor.slipCooldown=1.05;const speed=isLargeBanana(actor)?288:480;actor.slipX=Math.cos(angle)*speed;actor.slipY=Math.sin(angle)*speed;if(actor===player){stats.slips++;player.recoil=0;player.downPose='slip';player.z=0;player.vz=0;combo=0;comboLife=0;sfx('slip');notify('滑倒！小心敵人');}}
 function slide(actor,dt){const step=Math.min(dt,actor.down);const decay=Math.exp(-1.5*step),travel=(1-decay)/1.5;actor.x+=actor.slipX*travel;actor.y+=actor.slipY*travel;actor.slipX*=decay;actor.slipY*=decay;actor.down=Math.max(0,actor.down-dt);}
 function hurt(reason,source='enemy'){if(state!=='playing'||isBossWorldFrozen()||(source==='boss'&&isBossCinematic())||invincibleMode||player.inv>0||special)return;player.hp--;player.recoil=0;player.stompGuard=0;player.downPose='hurt';player.inv=2.5;if(player.down<=0){player.down=.5;player.slipX=Math.cos(player.face)*170;player.slipY=Math.sin(player.face)*170;}player.z=0;player.vz=0;combo=0;comboLife=0;shake=.22;burst(player.x,player.y,'#fff2b0');sfx('hurt');notify(reason+' −1 ♥');if(player.hp<=0)finish(false);}
 function hitEnemy(e,isStomp){
@@ -797,8 +806,9 @@ function separateEnemies(){
   }
   return checks;
 }
-function update(dt){if(state!=='playing'||mobilePlayBlocked)return;if(isBossWorldFrozen()){if(isBossEntrance())updateBossEntrance(dt);else updateBossCinematic(dt);return;}const pickupPath={x:player.x,y:player.y,grounded:player.z<=0,dashing:!!special,surfing:special?.mode==='surf'};const oldRate=musicRate();elapsed+=dt;if(!boss&&elapsed>=gameDuration){elapsed=gameDuration;startBossBattle();return;}if(oldRate!==musicRate())updateMusicRate();const enemyDt=dt*gameTempo();player.inv=Math.max(0,player.inv-dt);player.stompGuard=Math.max(0,player.stompGuard-dt);player.jumpLock=Math.max(0,player.jumpLock-dt);player.slipCooldown=Math.max(0,player.slipCooldown-dt);comboLife-=dt;if(comboLife<=0)combo=0;noticeLife-=dt;if(noticeLife<=0)$('notice').textContent='';shake=Math.max(0,shake-dt);
+function update(dt){if(state!=='playing'||mobilePlayBlocked)return;if(isBossWorldFrozen()){if(isBossEntrance())updateBossEntrance(dt);else updateBossCinematic(dt);return;}trackBattlePeaks();const pickupPath={x:player.x,y:player.y,grounded:player.z<=0,dashing:!!special,surfing:special?.mode==='surf'};const oldRate=musicRate();elapsed+=dt;if(!boss&&elapsed>=gameDuration){elapsed=gameDuration;startBossBattle();return;}if(oldRate!==musicRate())updateMusicRate();const enemyDt=dt*gameTempo();player.inv=Math.max(0,player.inv-dt);player.stompGuard=Math.max(0,player.stompGuard-dt);player.jumpLock=Math.max(0,player.jumpLock-dt);player.slipCooldown=Math.max(0,player.slipCooldown-dt);comboLife-=dt;if(comboLife<=0)combo=0;noticeLife-=dt;if(noticeLife<=0)$('notice').textContent='';shake=Math.max(0,shake-dt);
 updatePeels(dt);
+let stompPending=false;
 let mx=(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+stick.x,my=(keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0)+stick.y;let m=Math.hypot(mx,my);if(m>1){mx/=m;my/=m;}if(m>.1)player.face=Math.atan2(my,mx);
 if(special){
   const s=special;s.feedFlash=Math.max(0,(s.feedFlash||0)-dt);const step=Math.min(dt,Math.max(0,s.duration-s.t));s.t=Math.min(s.duration,s.t+dt);if(s.t>=s.nextSound){sfx('whoosh');s.nextSound=s.t+.24;}if(s.mode==='surf')steerSurf(s,mx,my,step);
@@ -829,13 +839,21 @@ else if(player.recoil>0){
   if(player.recoil<=0){player.z=0;player.vz=0;}
 }
 else if(player.down>0){slide(player,dt);}
-else{player.x+=mx*205*dt;player.y+=my*205*dt;const wasZ=player.z;player.vz-=830*dt;player.z+=player.vz*dt;if(player.vz<0&&wasZ>5&&player.z<=43){if(!tryStompBoss()){const target=enemies.filter(e=>e.hp>0&&e.type!=='durian'&&e.hit<=0&&dist(player,e)<((isLargeBanana(e)?46:30)*characterScale())).sort((a,b)=>dist(player,a)-dist(player,b))[0];if(target&&hitEnemy(target,true)){player.z=43;player.vz=310;player.jumpLock=.1;}}}
-
-if(player.z<=0){player.z=0;player.vz=0;if(wasZ>0&&comboLife<.9){combo=0;comboLife=0;}}}
+else{player.x+=mx*205*dt;player.y+=my*205*dt;const wasZ=player.z;player.vz-=830*dt;player.z+=player.vz*dt;
+if(player.vz<0&&wasZ>5&&player.z<=43&&!tryStompBoss())stompPending=true;
+if(player.z<=0&&!stompPending){player.z=0;player.vz=0;if(wasZ>0&&comboLife<.9){combo=0;comboLife=0;}}}
 player.x=clamp(player.x,-arenaSize,arenaSize);player.y=clamp(player.y,-arenaSize,arenaSize);
 if(isBossWorldFrozen()){updateHUD();return;}
-for(const e of enemies){if(e.hp<=0)continue;const oldX=e.x,oldY=e.y,wasRolling=e.knock>0||e.down>0;e.hit=Math.max(0,e.hit-dt);e.slipCooldown=Math.max(0,(e.slipCooldown||0)-dt);if(e.rise>0)e.rise=Math.max(0,e.rise-dt);if(e.carriedBy!==undefined){continue;}else if(e.projectile){updateThrownDurian(e,enemyDt);}else if(e.knock>0){e.knock-=dt;e.x+=e.kx*dt;e.y+=e.ky*dt;}else if(e.down>0){slide(e,dt);}else if(e.type==='charger'){updateCharger(e,dt,gameTempo());}else if(e.type==='thrower'){updateThrower(e,dt,gameTempo());}else{const dx=player.x-e.x,dy=player.y-e.y,d=Math.hypot(dx,dy)||1;const travel=Math.min(d,e.speed*enemyDt);e.x+=dx/d*travel;e.y+=dy/d*travel;}const bound=arenaSize-(isLargeBanana(e)?52:0);e.x=clamp(e.x,-bound,bound);e.y=clamp(e.y,-bound,bound);if(e.type==='durian'&&!e.projectile)advanceDurianRoll(e,oldX,oldY,wasRolling);updateEnemyFacing(e);}
+for(const e of enemies){if(e.hp<=0)continue;const oldX=e.x,oldY=e.y,wasRolling=e.knock>0||e.down>0;e.hit=Math.max(0,e.hit-dt);e.slipCooldown=Math.max(0,(e.slipCooldown||0)-dt);if(e.rise>0)e.rise=Math.max(0,e.rise-dt);if(e.carriedBy!==undefined){continue;}else if(e.projectile){updateThrownDurian(e,enemyDt);}else if(e.knock>0){e.knock-=dt;e.x+=e.kx*dt;e.y+=e.ky*dt;}else if(e.down>0){slide(e,dt);}else if(e.type==='charger'){updateCharger(e,dt,gameTempo());}else if(e.type==='thrower'){updateThrower(e,dt,gameTempo());}else{const dx=player.x-e.x,dy=player.y-e.y,d=Math.hypot(dx,dy)||1;const travel=Math.min(d,enemyWalkSpeed(e)*dt);e.x+=dx/d*travel;e.y+=dy/d*travel;}const bound=arenaSize-(isLargeBanana(e)?52:0);e.x=clamp(e.x,-bound,bound);e.y=clamp(e.y,-bound,bound);if(e.type==='durian'&&!e.projectile)advanceDurianRoll(e,oldX,oldY,wasRolling);updateEnemyFacing(e);}
 for(const fruit of enemies){if(fruit.carriedBy===undefined)continue;const owner=enemies.find(e=>e.id===fruit.carriedBy&&e.hp>0);if(owner){fruit.x=owner.x+(owner.facing||1)*48*characterScale();fruit.y=owner.y+8;fruit.z=50;}else{delete fruit.carriedBy;fruit.z=0;}}
+// Resolve descending stomps using the same post-movement positions as contact damage.
+if(stompPending){
+  if(state==='playing'&&player.down<=0&&player.recoil<=0&&player.vz<0){
+    const target=enemies.filter(e=>e.hp>0&&e.type!=='durian'&&e.hit<=0&&dist(player,e)<((isLargeBanana(e)?46:30)*characterScale())).sort((a,b)=>dist(player,a)-dist(player,b))[0];
+    if(target&&hitEnemy(target,true)){player.z=43;player.vz=310;player.jumpLock=.1;}
+  }
+  if(player.z<=0){player.z=0;player.vz=0;if(comboLife<.9){combo=0;comboLife=0;}}
+}
 // Build once after movement and skill hits, before checking all grounded actors.
 const peelGrid=buildPeelGrid();
 // Grounded actors can be tripped by stationary or fast-moving red peels.
@@ -847,17 +865,22 @@ if(state!=='playing')return;
 updateBoss(dt);if(state!=='playing')return;if(!boss){updateDurianSchedule();updateChargerSchedule();updateThrowerSchedule();}updateItems(dt,pickupPath);updateSurfItems(dt,pickupPath);
 // Gentle separation keeps targets readable and stops enemies stacking into one hitbox.
 separateEnemies();
-enemies=enemies.filter(e=>e.hp>0);spawnClock-=dt;if(!boss&&spawnClock<=0){spawnClock=smallSpawnInterval();if(enemies.length<110)spawn();if(elapsed>100&&enemies.length<110)spawn();}peels.forEach(p=>p.age+=dt);particles.forEach(p=>{p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vz-=380*dt;p.z+=p.vz*dt;});particles=particles.filter(p=>p.life>0);texts.forEach(t=>{t.life-=dt;t.z+=dt*32;});texts=texts.filter(t=>t.life>0);updateHUD();}
+enemies=enemies.filter(e=>e.hp>0);spawnClock-=dt;if(!boss&&spawnClock<=0){spawnClock=smallSpawnInterval();if(enemies.length<110)spawn();if(elapsed>100&&enemies.length<110)spawn();}peels.forEach(p=>p.age+=dt);particles.forEach(p=>{p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vz-=380*dt;p.z+=p.vz*dt;});particles=particles.filter(p=>p.life>0);texts.forEach(t=>{t.life-=dt;t.z+=dt*32;});texts=texts.filter(t=>t.life>0);trackBattlePeaks();updateHUD();}
 function finish(win){
   if(state==='over')return;
-  state='over';$('finalCountdown').hidden=true;syncMusic();endElapsed=0;shake=0;keys.clear();stick.x=stick.y=0;
+  trackBattlePeaks();state='over';$('finalCountdown').hidden=true;syncMusic();endElapsed=0;shake=0;keys.clear();stick.x=stick.y=0;
   $('arena')?.classList.add('ended');$('overlay').classList.add('ending');
   $('endWipe').hidden=false;$('endWipe').style.clipPath='inset(0 0 100% 0)';
   if(win)$('overlay').classList.add('victory');else $('overlay').classList.remove('victory');
   $('overlayTitle').innerHTML=win?'<span class="end-line">歷盡千蕉百難</span><span class="end-line victory-second">終成不敗蕉王</span>':'<span class="end-line">天有不測風雲</span><span class="end-line end-line-brick">蕉有旦夕禍福</span>';
   $('overlayText').textContent='';
   $('overlayText').hidden=true;
-  const results=[['存活時間',`${Math.floor(elapsed)} 秒`],['最大連踩',`${stats.maxCombo} 連`],['踩掉香蕉',`${stats.stompKills} 根`],['擊敗總數',`${kills} 根`],['衝刺次數',`${stats.dashes} 次`],['衝浪次數',`${stats.surfs} 次`],['撿到香蕉串',`${stats.bunches} 串`]];
+  const results=[
+    ['存活時間',`${Math.floor(elapsed)} 秒`],['場上最多敵人',`${stats.maxEnemies} 隻`],['擊敗總數',`${kills} 根`],
+    ['最大連踩',`${stats.maxCombo} 連`],['踩掉香蕉',`${stats.stompKills} 根`],['場上最多蕉皮',`${stats.maxPeels} 片`],
+    ['衝刺次數',`${stats.dashes} 次`],['衝浪次數',`${stats.surfs} 次`],['衝浪吸收蕉皮',`${stats.surfPeels} 片`],
+    ['撿到香蕉串',`${stats.bunches} 串`],['滑倒次數',`${stats.slips} 次`]
+  ];
   $('resultStats').innerHTML=results.map(([label,value])=>`<div><dt>${label}</dt><dd>${value}</dd></div>`).join('');$('resultStats').hidden=false;
   $('introRules').hidden=true;$('modeOptions').hidden=false;$('start').innerHTML='重新挑戰 <span>↗</span>';$('start').disabled=true;
   $('overlayFoot').textContent='';$('overlay').hidden=false;updateHUD();sfx(win?'win':'lose');
