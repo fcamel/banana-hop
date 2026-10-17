@@ -4,7 +4,7 @@
   "private": true,
   "description": "香蕉踩香蕉 — a 120-second banana survival browser game",
   "scripts": {
-    "check": "node --check dist/game.js && node --check dist/boss.js",
+    "check": "node --check dist/game.js && node --check dist/boss.js && node --check dist/surf.js",
     "test": "node tests/game.test.cjs",
     "start": "python3 -m http.server 8893 --bind 127.0.0.1 --directory dist"
   },

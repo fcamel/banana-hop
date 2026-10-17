@@ -7,11 +7,13 @@ let enemies=[],peels=[],particles=[],texts=[],special=null,player,keys=new Set()
 const arenaSize=1250,lastSfx=new Map(),gameDuration=120;
 let debugUnlocked=false,debugCode='',invincibleMode=false;
 let pickups=[],orbitPeels=[],nextPickupAt=17,nextBunchSide=0;
-function freshStats(){return {maxCombo:0,stompKills:0,stompHits:0,dashes:0,bunches:0};}
+function freshStats(){return {maxCombo:0,stompKills:0,stompHits:0,dashes:0,bunches:0,surfs:0};}
 let stats=freshStats();
 const heroSprite=new Image(),heroSlipSprite=new Image(),heroHurtSprite=new Image(),durianSprite=new Image(),enemySprite=new Image(),groundSprite=new Image(),floorTile=new Image();
-const bossSprite=new Image();
+const bossSprite=new Image(),heroSurfSprite=new Image(),surfItemSprite=new Image();
 const gameAssets=[
+  {image:heroSurfSprite,src:'assets/hero-surf-v1.png'},
+  {image:surfItemSprite,src:'assets/surfboard-v1.png'},
   {image:bossSprite,src:'assets/boss-necromancer-v1.png'},
   {image:heroSprite,src:'assets/hero-front-v1.png'},
   {image:heroSlipSprite,src:'assets/hero-slip-v1.png'},
@@ -30,7 +32,7 @@ function prepareFloorTile(){
 const renderSprites=new Map();
 function prepareRenderSprites(){
   renderSprites.clear();
-  const specs=[{image:heroSprite,height:205},{image:heroSlipSprite,height:280},{image:heroHurtSprite,height:280},{image:durianSprite,width:192},{image:bossSprite,height:410},{image:enemySprite,columns:4,height:192,variants:[1,2]},{image:groundSprite,columns:3,height:256}];
+  const specs=[{image:heroSurfSprite,height:240},{image:surfItemSprite,width:160},{image:heroSprite,height:205},{image:heroSlipSprite,height:280},{image:heroHurtSprite,height:280},{image:durianSprite,width:192},{image:bossSprite,height:410},{image:enemySprite,columns:4,height:192,variants:[1,2]},{image:groundSprite,columns:3,height:256}];
   for(const spec of specs){
     const frames=new Map(),columns=spec.columns||1,sw=spec.image.naturalWidth/columns,sh=spec.image.naturalHeight;
     for(const variant of spec.variants||[1])for(let frame=0;frame<columns;frame++){
@@ -74,13 +76,13 @@ function loadGameAssets(){
     loaded++;$('loadingProgress').value=loaded;$('loadingCount').textContent=loaded+' / '+gameAssets.length;return true;
   },()=>false))).then(async results=>{
     if(results.some(ok=>!ok))throw new Error('Image loading failed');
-    prepareFloorTile();prepareRenderSprites();$('loadingMessage').textContent='正在準備音樂…';await prepareMusicTracks();assetsReady=true;state='intro';keys.clear();$('start').disabled=false;$('overlay').hidden=false;$('loadingScreen').hidden=true;return true;
+    prepareFloorTile();prepareRenderSprites();$('loadingMessage').textContent='正在準備音樂…';await prepareMusicTracks();assetsReady=true;state='intro';$('modeOptions').hidden=false;keys.clear();$('start').disabled=false;$('overlay').hidden=false;$('loadingScreen').hidden=true;return true;
   }).catch(()=>{
     state='load-error';$('loadingMessage').textContent='圖片載入未完成，請檢查網路後重試。';$('loadingRetry').hidden=false;return false;
   }).finally(()=>{loadingPromise=null;});
   return loadingPromise;
 }
-function newPlayer(){return {x:0,y:0,z:0,vz:0,hp:5,inv:0,down:0,recoil:0,recoilX:0,recoilY:0,downPose:'slip',slipX:0,slipY:0,slipCooldown:0,face:0,jumpLock:0};}
+function newPlayer(){return {x:0,y:0,z:0,vz:0,hp:5,inv:0,down:0,recoil:0,stompGuard:0,recoilX:0,recoilY:0,downPose:'slip',slipX:0,slipY:0,slipCooldown:0,face:0,jumpLock:0};}
 player=newPlayer();
 function characterScale(){return window.matchMedia?.('(max-width: 650px), (pointer: coarse)').matches ? .7 : 1;}
 function resize(){const b=canvas.getBoundingClientRect();W=b.width;H=b.height;dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);}
@@ -222,8 +224,8 @@ function updateHUD(){updateBossHUD();const t=Math.max(0,Math.ceil(gameDuration-e
   $('timer').textContent=`${String(Math.floor(t/60)).padStart(2,'0')}:${String(t%60).padStart(2,'0')}`;if($('hearts').dataset?.hp!==String(player.hp)){
   $('hearts').innerHTML=Array.from({length:5},(_,i)=>`<span class="health-banana ${i<player.hp?'filled':'empty'}" aria-hidden="true"><svg viewBox="0 0 34 32"><path d="M7 3C1 14 7 31 23 29C31 28 34 19 32 11C26 21 15 17 13 4Z"/><path class="banana-seam" d="M8 8C7 21 20 28 29 20"/><path class="banana-tip" d="M7 2L13 3L13 7L7 6Z"/></svg></span>`).join('');
   $('hearts').setAttribute('aria-label',`生命 ${player.hp} / 5`);if($('hearts').dataset)$('hearts').dataset.hp=String(player.hp);
-}$('kills').textContent=String(kills).padStart(3,'0');$('bar1').style.width=`${Math.min(charge,100)}%`;$('chargeMeter').setAttribute('aria-valuenow',String(Math.round(charge)));if(charge>=100)$('chargeMeter').classList.add('ready');else $('chargeMeter').classList.remove('ready');$('specialTouch').disabled=charge<100||!!special;$('combo').textContent=combo>1&&comboLife>0?`${combo} 連踩`:'';}
-function reset(){if(!assetsReady)return;boss=null;bossElapsed=0;bossShots=[];$('overlayText').hidden=false;invincibleMode=debugUnlocked&&!!$('debugInvincible').checked;$('overlay').classList.remove('victory');$('debugOptions').hidden=true;$('overlay').classList.remove('intro-screen');stats=freshStats();$('resultStats').hidden=true;lastSfx.clear();unlockAudio();sfx('start');nextDurianAt=10;durianWarnings=[];nextChargerAt=20;nextThrowerAt=30;pickups=[];orbitPeels=[];nextPickupAt=17;nextBunchSide=0;endElapsed=0;$('overlay').classList.remove('ending');$('arena')?.classList.remove('ended');$('endWipe').hidden=true;$('start').disabled=false;player=newPlayer();enemies=[];peels=[];particles=[];texts=[];special=null;elapsed=debugUnlocked?[62,32,12].includes(Number($('debugStart').value))?gameDuration-Number($('debugStart').value):0:0;if(elapsed>0){nextDurianAt=elapsed+2;nextChargerAt=elapsed+2;nextThrowerAt=elapsed+3;nextPickupAt=elapsed+2;}spawnClock=.4/.75;charge=0;kills=0;combo=0;comboLife=0;noticeLife=0;keys.clear();stick.x=stick.y=0;state='playing';syncMusic();$('overlay').hidden=true;$('pause').textContent='Ⅱ';$('arena')?.classList.add('playing');if(characterScale()<1){document.body?.classList.add('game-active');window.scrollTo?.(0,0);resize();}for(let i=0;i<7;i++)spawn(180+Math.random()*180);if(debugUnlocked&&$('debugStart').value==='boss'){elapsed=120;nextPickupAt=122;startBossBattle(true);}updateHUD();canvas.focus();notify(boss?'':characterScale()<1?'左側移動 · 右側跳踩／衝刺 · 撐過 120 秒':'SPACE 跳踩 · J 衝刺 · 撐過 120 秒');}
+}$('kills').textContent=String(kills).padStart(3,'0');$('bar1').style.width=`${Math.min(charge,100)}%`;$('chargeMeter').setAttribute('aria-valuenow',String(Math.round(charge)));if(charge>=100)$('chargeMeter').classList.add('ready');else $('chargeMeter').classList.remove('ready');$('specialTouch').disabled=charge<100||!!special;updateSurfHUD();$('combo').textContent=combo>1&&comboLife>0?`${combo} 連踩`:'';}
+function reset(){if(!assetsReady)return;boss=null;bossElapsed=0;bossShots=[];bossClones=[];$('overlayText').hidden=false;invincibleMode=debugUnlocked&&!!$('debugInvincible').checked;$('overlay').classList.remove('victory');$('debugOptions').hidden=true;$('modeOptions').hidden=true;$('overlay').classList.remove('intro-screen');stats=freshStats();$('resultStats').hidden=true;lastSfx.clear();unlockAudio();sfx('start');nextDurianAt=10;durianWarnings=[];nextChargerAt=20;nextThrowerAt=30;pickups=[];orbitPeels=[];nextPickupAt=17;nextBunchSide=0;endElapsed=0;$('overlay').classList.remove('ending');$('arena')?.classList.remove('ended');$('endWipe').hidden=true;$('start').disabled=false;player=newPlayer();enemies=[];peels=[];particles=[];texts=[];special=null;elapsed=debugUnlocked?[62,32,12].includes(Number($('debugStart').value))?gameDuration-Number($('debugStart').value):0:0;if(elapsed>0){nextDurianAt=elapsed+2;nextChargerAt=elapsed+2;nextThrowerAt=elapsed+3;nextPickupAt=elapsed+2;}resetSurf();spawnClock=.4/.75;charge=0;kills=0;combo=0;comboLife=0;noticeLife=0;keys.clear();stick.x=stick.y=0;state='playing';syncMusic();$('overlay').hidden=true;$('pause').textContent='Ⅱ';$('arena')?.classList.add('playing');if(characterScale()<1){document.body?.classList.add('game-active');window.scrollTo?.(0,0);resize();}for(let i=0;i<7;i++)spawn(180+Math.random()*180);if($('gameMode').value==='boss'||(debugUnlocked&&$('debugStart').value==='boss')){elapsed=120;nextPickupAt=122;startBossBattle(true);}updateHUD();canvas.focus();notify(boss?'':characterScale()<1?'左側移動 · 右側跳踩／衝刺 · 撐過 120 秒':'SPACE 跳踩 · J 衝刺 · 撐過 120 秒');}
 function gameTempo(time=elapsed){return time>=90?1.5:1;}
 function smallSpawnInterval(time=elapsed){return Math.max(.18,.8-time*.005)/.75;}
 function isLargeBanana(e){return e.type==='charger'||e.type==='thrower';}
@@ -369,7 +371,7 @@ function updatePeels(dt){
 }
 // Swept contact catches fast peels even when they cross a target between frames.
 function touchingPeel(actor){return peels.find(p=>{
-  if(p.age<=.5)return false;
+  if(p.ritual||p.summonWave||p.age<=.5)return false;
   const ax=p.prevX??p.x,ay=p.prevY??p.y,dx=p.x-ax,dy=p.y-ay,length=dx*dx+dy*dy;
   const t=length?clamp(((actor.x-ax)*dx+(actor.y-ay)*dy)/length,0,1):0;
   return Math.hypot(actor.x-(ax+t*dx),actor.y-(ay+t*dy))<16+10*characterScale()+(p.red||p.large?16:0)+(isLargeBanana(actor)?16*characterScale():0);
@@ -458,12 +460,12 @@ function drawBunchVector(p){
   ctx.fillStyle='#758e43';ctx.fillRect(-5,-24,9,8);ctx.fillStyle='#e0cea0';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.fillText('香蕉串',0,-33);ctx.restore();
 }
 
-function jump(){if(state!=='playing'||isBossEntrance()||special||player.recoil>0||player.down>0||player.z>1||player.jumpLock>0)return;player.vz=350;player.jumpLock=.12;sfx('jump');}
+function jump(){if(state!=='playing'||isBossWorldFrozen()||special||player.recoil>0||player.down>0||player.z>1||player.jumpLock>0)return;player.vz=350;player.jumpLock=.12;sfx('jump');}
 function burst(x,y,color,n=12){for(let i=0;i<n;i++){const a=Math.random()*TAU,s=30+Math.random()*150;particles.push({x,y,z:8,vx:Math.cos(a)*s,vy:Math.sin(a)*s,vz:80+Math.random()*80,life:.4+Math.random()*.3,color});}}
 // Slipping never grants damage immunity; the player remains vulnerable while down.
 function slip(actor,angle){actor.down=.7;actor.slipCooldown=1.05;actor.slipX=Math.cos(angle)*480;actor.slipY=Math.sin(angle)*480;if(actor===player){player.recoil=0;player.downPose='slip';player.z=0;player.vz=0;combo=0;comboLife=0;sfx('slip');notify('滑倒！小心敵人');}}
 function slide(actor,dt){const step=Math.min(dt,actor.down);const decay=Math.exp(-1.5*step),travel=(1-decay)/1.5;actor.x+=actor.slipX*travel;actor.y+=actor.slipY*travel;actor.slipX*=decay;actor.slipY*=decay;actor.down=Math.max(0,actor.down-dt);}
-function hurt(reason){if(state!=='playing'||isBossEntrance()||invincibleMode||player.inv>0||special)return;player.hp--;player.recoil=0;player.downPose='hurt';player.inv=1.8;if(player.down<=0){player.down=.5;player.slipX=Math.cos(player.face)*170;player.slipY=Math.sin(player.face)*170;}player.z=0;player.vz=0;combo=0;comboLife=0;shake=.22;burst(player.x,player.y,'#fff2b0');sfx('hurt');notify(reason+' −1 ♥');if(player.hp<=0)finish(false);}
+function hurt(reason){if(state!=='playing'||isBossWorldFrozen()||invincibleMode||player.inv>0||special)return;player.hp--;player.recoil=0;player.stompGuard=0;player.downPose='hurt';player.inv=1.8;if(player.down<=0){player.down=.5;player.slipX=Math.cos(player.face)*170;player.slipY=Math.sin(player.face)*170;}player.z=0;player.vz=0;combo=0;comboLife=0;shake=.22;burst(player.x,player.y,'#fff2b0');sfx('hurt');notify(reason+' −1 ♥');if(player.hp<=0)finish(false);}
 function hitEnemy(e,isStomp){
   if(e.hp<=0||e.hit>0||e.type==='durian')return false;
   const originalType=e.type;
@@ -474,6 +476,7 @@ function hitEnemy(e,isStomp){
     releaseHeldDurian(e);delete e.targetDurian;delete e.throwCooldown;
     e.type='charger';e.hp=1;e.phase='approach';e.phaseTime=0;e.speed=52;
   }else if(originalType==='charger'){
+    greenSurfKills++;if(greenSurfKills%3===0)spawnSurfPickup(e);
     const angle=Math.atan2(e.y-player.y,e.x-player.x)+Math.PI/2;
     for(const side of [-1,1]){
       const dx=Math.cos(angle)*side,dy=Math.sin(angle)*side;
@@ -488,7 +491,7 @@ function hitEnemy(e,isStomp){
   return true;
 }
 function activate(){
-  if(state!=='playing'||isBossEntrance()||charge<100||special)return;
+  if(state!=='playing'||isBossWorldFrozen()||charge<100||special)return;
   const dx=(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+stick.x;
   const dy=(keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0)+stick.y;
   const dir=Math.hypot(dx,dy)>.1?Math.atan2(dy,dx):player.face;
@@ -687,11 +690,14 @@ function drawEnemyActor(e){
   else drawEnemyGhost(e,0,Math.sin(elapsed*5+e.wobble)*2);
   ctx.restore();
 }
+function playerDamageBlink(){return player.inv>0&&player.stompGuard<=0&&Math.floor(player.inv*12)%2===0&&!special;}
 function drawPlayerActor(){
   const foot=screen(player.x,player.y),scale=characterScale();ctx.save();ctx.translate(foot.x,foot.y);ctx.scale(scale,scale);
   ellipse(6,9,26,10,'#e8f58b50','#e9f8a7');ellipse(6,9,Math.max(9,21-player.z*.08),7,'#44305735');
-  ctx.save();if(player.inv>0&&Math.floor(player.inv*12)%2===0&&!special)ctx.globalAlpha=.4;
-  if(special){ellipse(5,-player.z-10,35,32,'#ebf58c44');drawHero(0,-player.z,1.12,player.face,special.t*TAU*3);}
+  ctx.save();if(playerDamageBlink())ctx.globalAlpha=.4;
+  if(player.recoil>0&&player.stompGuard>0){ctx.strokeStyle='#d5efb4';ctx.lineWidth=2;for(const x of [-22,27]){ctx.beginPath();ctx.moveTo(x-4,-player.z-19);ctx.lineTo(x,-player.z-27);ctx.lineTo(x+4,-player.z-19);ctx.stroke();}}
+  if(special?.mode==='surf')drawSurfHero();
+  else if(special){ellipse(5,-player.z-10,35,32,'#ebf58c44');drawHero(0,-player.z,1.12,player.face,special.t*TAU*3);}
   else drawHero(0,-player.z,1.12,player.face,Math.sin(player.face)*.04,player.down>0);
   ctx.restore();
   if(scale===1&&!special&&player.down<=0){ctx.fillStyle='#e4d6af';ctx.font='bold 9px sans-serif';ctx.textAlign='center';ctx.fillText('YOU',6,-player.z-90);}
@@ -700,15 +706,15 @@ function drawPlayerActor(){
 function render(){if(!assetsReady)return;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);ctx.save();if(shake>0)ctx.translate((Math.random()-.5)*8,(Math.random()-.5)*8);drawFloor();
 const edge=screen(-arenaSize,-arenaSize),edge2=screen(arenaSize,arenaSize);ctx.strokeStyle='#948572';ctx.lineWidth=5;ctx.setLineDash([14,12]);ctx.strokeRect(edge.x,edge.y,edge2.x-edge.x,edge2.y-edge.y);ctx.setLineDash([]);
 if(state==='intro'){for(const b of [{x:-W*.3,y:30,c:ripenessColors[3]},{x:W*.32,y:85,c:ripenessColors[2]},{x:-W*.24,y:220,c:ripenessColors[1]},{x:W*.23,y:-150,c:ripenessColors[2]}]){const p=screen(b.x,b.y);ellipse(p.x+8,p.y+9,24,8,'#44305722');drawEnemyGhost({x:b.x,hp:b.c===ripenessColors[3]?3:b.c===ripenessColors[2]?2:1,type:'normal',hit:0,down:0},p.x,p.y);} }
-drawBossGround();peels.forEach(drawPeel);pickups.forEach(drawBunch);orbitPeels.forEach(drawOrbitPeel);
+drawBossGround();peels.forEach(drawPeel);pickups.forEach(drawBunch);surfPickups.forEach(drawSurfPickup);orbitPeels.forEach(drawOrbitPeel);
 
 
 for(const warning of durianWarnings){if(!isInView(warning,90))continue;const p=screen(warning.x,warning.y);ellipse(p.x,p.y,32,23,'#fff1a055','#845335');ctx.fillStyle='#dbb998';ctx.textAlign='center';ctx.font='bold 23px sans-serif';ctx.fillText('!',p.x,p.y+6);ctx.font='bold 10px sans-serif';ctx.fillText('榴槤來襲',p.x,p.y-34);}
 
 if(special){special.trail.forEach((p,i)=>{if(!isInView(p,40,10))return;const s=screen(p.x,p.y,10);ellipse(s.x,s.y,18,10,`rgba(239,248,139,${i/special.trail.length*.4})`);});}
 const actors=enemies.filter(e=>e.hp>0&&isInView(e,260+(e.z||0))).map(e=>({y:e.y,draw:()=>drawEnemyActor(e)}));
-if(boss)actors.push({y:boss.y,draw:drawBossActor});actors.push({y:player.y,draw:drawPlayerActor});actors.sort((a,b)=>a.y-b.y).forEach(a=>a.draw());
-drawBossShots();particles.forEach(p=>{if(!isInView(p,10,p.z))return;const s=screen(p.x,p.y,p.z);ctx.globalAlpha=clamp(p.life*2,0,1);ctx.fillStyle=p.color;ctx.fillRect(s.x,s.y,4,4);});ctx.globalAlpha=1;texts.forEach(t=>{if(!isInView(t,100,t.z))return;const s=screen(t.x,t.y,t.z);ctx.globalAlpha=clamp(t.life*2,0,1);ctx.fillStyle='#fbffe0';ctx.strokeStyle='#665080';ctx.lineWidth=3;ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.strokeText(t.text,s.x,s.y);ctx.fillText(t.text,s.x,s.y);});ctx.globalAlpha=1;const grad=ctx.createRadialGradient(W/2,H/2,H*.25,W/2,H/2,Math.max(W,H)*.7);grad.addColorStop(0,'#39271500');grad.addColorStop(1,'#39271522');ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);ctx.restore();if(state==='playing'||state==='paused')drawBunchIndicators();}
+if(boss)actors.push({y:boss.y,draw:()=>drawBossActor(boss)});for(const clone of bossClones)actors.push({y:clone.y,draw:()=>drawBossActor(clone)});if(boss?.cinematic?.kind==='split'&&!boss.cinematic.spawned)for(const target of boss.cinematic.targets)actors.push({y:target.y,draw:()=>drawBossClonePreview(target)});actors.push({y:player.y,draw:drawPlayerActor});actors.sort((a,b)=>a.y-b.y).forEach(a=>a.draw());
+drawBossShots();particles.forEach(p=>{if(!isInView(p,10,p.z))return;const s=screen(p.x,p.y,p.z);ctx.globalAlpha=clamp(p.life*2,0,1);ctx.fillStyle=p.color;ctx.fillRect(s.x,s.y,4,4);});ctx.globalAlpha=1;texts.forEach(t=>{if(!isInView(t,100,t.z))return;const s=screen(t.x,t.y,t.z);ctx.globalAlpha=clamp(t.life*2,0,1);ctx.fillStyle='#fbffe0';ctx.strokeStyle='#665080';ctx.lineWidth=3;ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.strokeText(t.text,s.x,s.y);ctx.fillText(t.text,s.x,s.y);});ctx.globalAlpha=1;const grad=ctx.createRadialGradient(W/2,H/2,H*.25,W/2,H/2,Math.max(W,H)*.7);grad.addColorStop(0,'#39271500');grad.addColorStop(1,'#39271522');ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);ctx.restore();if(state==='playing'||state==='paused'){drawBunchIndicators();drawSurfIndicators();drawSurfFlights();}}
 // Keep moving bucket membership current so collision response preserves pair order.
 function separateEnemies(){
   const scale=characterScale(),cellSize=96,grid=new Map(),entries=new Map();let checks=0;
@@ -745,22 +751,29 @@ function separateEnemies(){
   }
   return checks;
 }
-function update(dt){if(state!=='playing')return;if(isBossEntrance()){updateBossEntrance(dt);return;}const pickupPath={x:player.x,y:player.y,grounded:player.z<=0,dashing:!!special};const oldRate=musicRate();elapsed+=dt;if(!boss&&elapsed>=gameDuration){elapsed=gameDuration;startBossBattle();return;}if(oldRate!==musicRate())updateMusicRate();const enemyDt=dt*gameTempo();player.inv=Math.max(0,player.inv-dt);player.jumpLock=Math.max(0,player.jumpLock-dt);player.slipCooldown=Math.max(0,player.slipCooldown-dt);comboLife-=dt;if(comboLife<=0)combo=0;noticeLife-=dt;if(noticeLife<=0)$('notice').textContent='';shake=Math.max(0,shake-dt);
+function update(dt){if(state!=='playing')return;if(isBossWorldFrozen()){if(isBossEntrance())updateBossEntrance(dt);else updateBossCinematic(dt);return;}const pickupPath={x:player.x,y:player.y,grounded:player.z<=0,dashing:!!special};const oldRate=musicRate();elapsed+=dt;if(!boss&&elapsed>=gameDuration){elapsed=gameDuration;startBossBattle();return;}if(oldRate!==musicRate())updateMusicRate();const enemyDt=dt*gameTempo();player.inv=Math.max(0,player.inv-dt);player.stompGuard=Math.max(0,player.stompGuard-dt);player.jumpLock=Math.max(0,player.jumpLock-dt);player.slipCooldown=Math.max(0,player.slipCooldown-dt);comboLife-=dt;if(comboLife<=0)combo=0;noticeLife-=dt;if(noticeLife<=0)$('notice').textContent='';shake=Math.max(0,shake-dt);
 updatePeels(dt);
 let mx=(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+stick.x,my=(keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0)+stick.y;let m=Math.hypot(mx,my);if(m>1){mx/=m;my/=m;}if(m>.1)player.face=Math.atan2(my,mx);
 if(special){
-  const s=special;const step=Math.min(dt,Math.max(0,s.duration-s.t));s.t=Math.min(s.duration,s.t+dt);if(s.t>=s.nextSound){sfx('whoosh');s.nextSound=s.t+.24;}
-  player.x=clamp(player.x+s.dx*s.speed*step,-arenaSize,arenaSize);player.y=clamp(player.y+s.dy*s.speed*step,-arenaSize,arenaSize);player.z=10;player.face=Math.atan2(s.dy,s.dx);
+  const s=special;s.feedFlash=Math.max(0,(s.feedFlash||0)-dt);const step=Math.min(dt,Math.max(0,s.duration-s.t));s.t=Math.min(s.duration,s.t+dt);if(s.t>=s.nextSound){sfx('whoosh');s.nextSound=s.t+.24;}if(s.mode==='surf')steerSurf(s,mx,my,step);
+  const dashFromX=player.x,dashFromY=player.y;
+  player.x=clamp(player.x+s.dx*s.speed*step,-arenaSize,arenaSize);player.y=clamp(player.y+s.dy*s.speed*step,-arenaSize,arenaSize);player.z=s.mode==='surf'?0:10;player.face=Math.atan2(s.dy,s.dx);
+  if(s.mode==='surf')feedSurf(s,dashFromX,dashFromY);
   s.trail.push({x:player.x,y:player.y});if(s.trail.length>24)s.trail.shift();
+  if(boss)for(const target of [boss,...bossClones]){
+    if(s.hits.has(target)||segmentDistance(target,dashFromX,dashFromY,player.x,player.y)>76*characterScale())continue;
+    if(hitBoss(target,false))s.hits.add(target);
+    if(state!=='playing'||isBossWorldFrozen())return;
+  }
   for(const e of enemies){
-    if(e.hp<=0||e.carriedBy!==undefined||dist(player,e)>((isLargeBanana(e)?76:60)*characterScale()))continue;
+    if(e.hp<=0||e.carriedBy!==undefined||(s.mode==='surf'?segmentDistance(e,dashFromX,dashFromY,player.x,player.y):dist(player,e))>((isLargeBanana(e)?76:60)*characterScale()))continue;
     if(s.hits.has(e.id))continue;
     if(e.type!=='durian'&&e.hit>0)continue;
     s.hits.add(e.id);
     if(e.type==='durian'){const dx=e.x-player.x,dy=e.y-player.y,l=Math.hypot(dx,dy)||1;e.kx=dx/l*400;e.ky=dy/l*400;e.knock=.5;burst(e.x,e.y,'#d8e89b');}
-    else hitEnemy(e,false);
+    else{const before=enemies.length;hitEnemy(e,false);for(let i=before;i<enemies.length;i++)s.hits.add(enemies[i].id);if(s.mode==='surf'&&e.hp>0){const a=Math.atan2(e.y-player.y,e.x-player.x);e.knock=.35;e.kx=Math.cos(a)*320;e.ky=Math.sin(a)*320;}}
   }
-  if(s.t>=s.duration){special=null;player.inv=Math.max(player.inv,.35);player.z=0;player.vz=0;player.slipCooldown=Math.max(player.slipCooldown,.3);}
+  if(s.t>=s.duration){special=null;player.inv=Math.max(player.inv,.35);player.z=0;player.vz=0;player.slipCooldown=Math.max(player.slipCooldown,s.mode==='surf'?.6:.3);}
 }
 else if(player.recoil>0){
   const step=Math.min(dt,player.recoil);player.recoil=Math.max(0,player.recoil-dt);
@@ -773,15 +786,16 @@ else{player.x+=mx*205*dt;player.y+=my*205*dt;const wasZ=player.z;player.vz-=830*
 
 if(player.z<=0){player.z=0;player.vz=0;if(wasZ>0&&comboLife<.9){combo=0;comboLife=0;}}}
 player.x=clamp(player.x,-arenaSize,arenaSize);player.y=clamp(player.y,-arenaSize,arenaSize);
+if(isBossCinematic()){updateHUD();return;}
 for(const e of enemies){if(e.hp<=0)continue;const oldX=e.x,oldY=e.y,wasRolling=e.knock>0||e.down>0;e.hit=Math.max(0,e.hit-dt);e.slipCooldown=Math.max(0,(e.slipCooldown||0)-dt);if(e.rise>0)e.rise=Math.max(0,e.rise-dt);if(e.carriedBy!==undefined){continue;}else if(e.projectile){updateThrownDurian(e,enemyDt);}else if(e.knock>0){e.knock-=dt;e.x+=e.kx*dt;e.y+=e.ky*dt;}else if(e.down>0){slide(e,dt);}else if(e.type==='charger'){updateCharger(e,dt,gameTempo());}else if(e.type==='thrower'){updateThrower(e,dt,gameTempo());}else{const dx=player.x-e.x,dy=player.y-e.y,d=Math.hypot(dx,dy)||1;const travel=Math.min(d,e.speed*enemyDt);e.x+=dx/d*travel;e.y+=dy/d*travel;}const bound=arenaSize-(isLargeBanana(e)?52:0);e.x=clamp(e.x,-bound,bound);e.y=clamp(e.y,-bound,bound);if(e.type==='durian'&&!e.projectile)advanceDurianRoll(e,oldX,oldY,wasRolling);updateEnemyFacing(e);}
 for(const fruit of enemies){if(fruit.carriedBy===undefined)continue;const owner=enemies.find(e=>e.id===fruit.carriedBy&&e.hp>0);if(owner){fruit.x=owner.x+(owner.facing||1)*48*characterScale();fruit.y=owner.y+8;fruit.z=50;}else{delete fruit.carriedBy;fruit.z=0;}}
 // Grounded actors can be tripped by stationary or fast-moving red peels.
 if(!special&&player.z<=0&&player.down<=0&&player.slipCooldown<=0){const p=touchingPeel(player);if(p){if(!p.red)peels.splice(peels.indexOf(p),1);slip(player,p.red&&p.slideTime>0?p.angle:player.face);}}
 for(const e of enemies){if(e.hp<=0||e.carriedBy!==undefined||e.projectile||e.down>0||e.knock>0||e.slipCooldown>0)continue;const p=touchingPeel(e);if(p){if(!p.red)peels.splice(peels.indexOf(p),1);slip(e,p.red&&p.slideTime>0?p.angle:Math.atan2(player.y-e.y,player.x-e.x));if(e.type==='charger'){e.phase='approach';e.phaseTime=0;}}}
-// Check contact on every frame, including while sliding or lying on the ground.
-for(const e of enemies){if(e.hp<=0||special||e.carriedBy!==undefined||e.projectile)continue;const d=dist(player,e);if(e.type==='durian'&&d<35*characterScale()){hurt('撞到榴槤');break;}if(e.type!=='durian'&&e.hit<=0&&player.z<18&&d<(isLargeBanana(e)?45:29)*characterScale()){hurt('撞到香蕉');break;}}
+// Fallen enemies are harmless; the player remains vulnerable while sliding or down.
+for(const e of enemies){if(e.hp<=0||e.down>0||special||e.carriedBy!==undefined||e.projectile)continue;const d=dist(player,e);if(e.type==='durian'&&d<35*characterScale()){hurt('撞到榴槤');break;}if(e.type!=='durian'&&e.hit<=0&&player.z<18&&d<(isLargeBanana(e)?45:29)*characterScale()){hurt('撞到香蕉');break;}}
 if(state!=='playing')return;
-updateBoss(dt);if(state!=='playing')return;if(!boss){updateDurianSchedule();updateChargerSchedule();updateThrowerSchedule();}updateItems(dt,pickupPath);
+updateBoss(dt);if(state!=='playing')return;if(!boss){updateDurianSchedule();updateChargerSchedule();updateThrowerSchedule();}updateItems(dt,pickupPath);updateSurfItems(dt,pickupPath);
 // Gentle separation keeps targets readable and stops enemies stacking into one hitbox.
 separateEnemies();
 enemies=enemies.filter(e=>e.hp>0);spawnClock-=dt;if(!boss&&spawnClock<=0){spawnClock=smallSpawnInterval();if(enemies.length<110)spawn();if(elapsed>100&&enemies.length<110)spawn();}peels.forEach(p=>p.age+=dt);particles.forEach(p=>{p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vz-=380*dt;p.z+=p.vz*dt;});particles=particles.filter(p=>p.life>0);texts.forEach(t=>{t.life-=dt;t.z+=dt*32;});texts=texts.filter(t=>t.life>0);updateHUD();}
@@ -794,14 +808,14 @@ function finish(win){
   $('overlayTitle').innerHTML=win?'<span class="end-line">歷盡千蕉百難</span><span class="end-line victory-second">終成不敗蕉王</span>':'<span class="end-line">天有不測風雲</span><span class="end-line end-line-brick">蕉有旦夕禍福</span>';
   $('overlayText').textContent='';
   $('overlayText').hidden=true;
-  const results=[['存活時間',`${Math.floor(elapsed)} 秒`],['最大連踩',`${stats.maxCombo} 連`],['踩掉香蕉',`${stats.stompKills} 根`],['擊敗總數',`${kills} 根`],['衝刺次數',`${stats.dashes} 次`],['撿到香蕉串',`${stats.bunches} 串`]];
+  const results=[['存活時間',`${Math.floor(elapsed)} 秒`],['最大連踩',`${stats.maxCombo} 連`],['踩掉香蕉',`${stats.stompKills} 根`],['擊敗總數',`${kills} 根`],['衝刺次數',`${stats.dashes} 次`],['衝浪次數',`${stats.surfs} 次`],['撿到香蕉串',`${stats.bunches} 串`]];
   $('resultStats').innerHTML=results.map(([label,value])=>`<div><dt>${label}</dt><dd>${value}</dd></div>`).join('');$('resultStats').hidden=false;
-  $('introRules').hidden=true;$('start').innerHTML='重新挑戰 <span>↗</span>';$('start').disabled=true;
+  $('introRules').hidden=true;$('modeOptions').hidden=false;$('start').innerHTML='重新挑戰 <span>↗</span>';$('start').disabled=true;
   $('overlayFoot').textContent='';$('overlay').hidden=false;updateHUD();sfx(win?'win':'lose');
 }
 function tickEnding(dt){endElapsed=Math.min(2,endElapsed+dt);$('endWipe').style.clipPath=`inset(0 0 ${(1-endElapsed/2)*100}% 0)`;if(endElapsed>=2)$('start').disabled=false;}
 
-function pause(){if(state==='playing'){$('overlayText').hidden=false;$('overlay').classList.add('intro-screen');$('resultStats').hidden=true;state='paused';$('finalCountdown').hidden=true;syncMusic();keys.clear();stick.x=stick.y=0;$('knob').style.transform='';$('overlayTitle').textContent='香蕉休息中';$('overlayText').textContent=characterScale()<1?'左側搖桿移動 · 右側按鈕跳踩／衝刺':'移動：WASD／方向鍵 · 跳踩：空白鍵 · 衝刺：J';$('introRules').hidden=true;$('start').innerHTML='繼續蹦跳 <span>↗</span>';$('overlay').hidden=false;$('pause').textContent='▶';}else if(state==='paused'){$('overlay').classList.remove('intro-screen');state='playing';syncMusic();updateHUD();$('overlay').hidden=true;$('pause').textContent='Ⅱ';canvas.focus();}}
+function pause(){if(state==='playing'){$('overlayText').hidden=false;$('overlay').classList.add('intro-screen');$('resultStats').hidden=true;state='paused';updateSurfHUD();$('finalCountdown').hidden=true;syncMusic();keys.clear();stick.x=stick.y=0;$('knob').style.transform='';$('overlayTitle').textContent='香蕉休息中';$('overlayText').textContent=characterScale()<1?'左側搖桿移動 · 右側跳踩／衝刺／衝浪':'移動：WASD／方向鍵 · 跳踩：空白鍵 · 衝刺：J · 衝浪：K';$('introRules').hidden=true;$('start').innerHTML='繼續蹦跳 <span>↗</span>';$('overlay').hidden=false;$('pause').textContent='▶';}else if(state==='paused'){$('overlay').classList.remove('intro-screen');state='playing';syncMusic();updateHUD();$('overlay').hidden=true;$('pause').textContent='Ⅱ';canvas.focus();}}
 $('loadingRetry').addEventListener('click',loadGameAssets);
 $('start').addEventListener('click',()=>{if(state==='over'&&endElapsed<2)return;state==='paused'?pause():reset();});$('pause').addEventListener('click',pause);$('help').addEventListener('click',()=>{if(state==='playing')pause();else if(state==='intro')notify('踩熟香蕉集氣 · 香蕉皮會滑倒，撞到敵人會扣血');});function setVolume(value){
   const wasSound=sound;
@@ -826,19 +840,20 @@ function handleDebugCode(e){
   if(debugCode==='banana'){debugUnlocked=true;$('debugOptions').hidden=false;debugCode='';}
   return true;
 }
-function gameKey(e){const physical={KeyW:'w',KeyA:'a',KeyS:'s',KeyD:'d',KeyJ:'j',KeyP:'p',Space:' ',ArrowUp:'arrowup',ArrowDown:'arrowdown',ArrowLeft:'arrowleft',ArrowRight:'arrowright',Escape:'escape'};return physical[e.code]||(e.key||'').toLowerCase();}
+function gameKey(e){const physical={KeyW:'w',KeyA:'a',KeyS:'s',KeyD:'d',KeyJ:'j',KeyK:'k',KeyP:'p',Space:' ',ArrowUp:'arrowup',ArrowDown:'arrowdown',ArrowLeft:'arrowleft',ArrowRight:'arrowright',Escape:'escape'};return physical[e.code]||(e.key||'').toLowerCase();}
 function handleKeyDown(e){
   if(e.metaKey||e.ctrlKey||e.altKey||e.target===$('volume')||e.target===$('sound')||e.target===$('debugStart')||e.target===$('debugInvincible'))return;
   if(handleDebugCode(e)){e.preventDefault();return;}
-  const k=gameKey(e);if(!['w','a','s','d','j','p',' ','arrowup','arrowdown','arrowleft','arrowright','escape'].includes(k))return;
+  const k=gameKey(e);if(!['w','a','s','d','j','k','p',' ','arrowup','arrowdown','arrowleft','arrowright','escape'].includes(k))return;
   e.preventDefault();keys.add(k);
-  if(!e.repeat){if(k===' ')jump();if(k==='j')activate();if(k==='p'||k==='escape')pause();}
+  if(!e.repeat){if(k===' ')jump();if(k==='j')activate();if(k==='k')activateSurf();if(k==='p'||k==='escape')pause();}
 }
 function handleKeyUp(e){keys.delete(gameKey(e));}
 window.addEventListener('keydown',handleKeyDown,true);window.addEventListener('keyup',handleKeyUp,true);
 canvas.addEventListener('pointerdown',()=>{canvas.focus();unlockAudio();});
 window.addEventListener('blur',()=>{keys.clear();if(state==='playing')pause();});document.addEventListener('visibilitychange',()=>{if(document.hidden&&state==='playing')pause();});
 $('jumpTouch').addEventListener('pointerdown',e=>{e.preventDefault();jump();});$('specialTouch').addEventListener('pointerdown',e=>{e.preventDefault();activate();});
+$('surfUse').addEventListener('pointerdown',e=>{e.preventDefault();activateSurf();});
 function moveStick(e){const b=$('stick').getBoundingClientRect(),dx=e.clientX-b.left-b.width/2,dy=e.clientY-b.top-b.height/2,d=Math.hypot(dx,dy),r=35;stick.x=dx/Math.max(r,d);stick.y=dy/Math.max(r,d);$('knob').style.transform=`translate(${stick.x*r}px,${stick.y*r}px)`;}
 $('stick').addEventListener('pointerdown',e=>{e.preventDefault();if(stickPointer!==null)return;stickPointer=e.pointerId;$('stick').setPointerCapture(e.pointerId);moveStick(e);});$('stick').addEventListener('pointermove',e=>{if(e.pointerId===stickPointer)moveStick(e);});function releaseStick(e){if(e.pointerId!==stickPointer)return;stickPointer=null;stick.x=stick.y=0;$('knob').style.transform='';}['pointerup','pointercancel','lostpointercapture'].forEach(event=>$('stick').addEventListener(event,releaseStick));
-function frame(now){const rawDt=Math.max(0,(now-previous)/1000),dt=Math.min(rawDt,.033);previous=now;if(state==='playing')update(isBossEntrance()?rawDt:dt);else if(state==='over')tickEnding(rawDt);render();requestAnimationFrame(frame);}resize();updateHUD();loadGameAssets();requestAnimationFrame(frame);
+function frame(now){const rawDt=Math.max(0,(now-previous)/1000),dt=Math.min(rawDt,.033);previous=now;if(state==='playing')update(isBossWorldFrozen()?rawDt:dt);else if(state==='over')tickEnding(rawDt);render();requestAnimationFrame(frame);}resize();updateHUD();loadGameAssets();requestAnimationFrame(frame);

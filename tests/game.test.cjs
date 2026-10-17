@@ -1,10 +1,73 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const elements=new Map();const element=id=>{if(!elements.has(id))elements.set(id,{style:{},hidden:false,classList:{add(){},remove(){}},textContent:'',innerHTML:'',addEventListener(){},setAttribute(){},focus(){},getBoundingClientRect:()=>({width:1000,height:650,left:0,top:0}),setPointerCapture(){}});return elements.get(id);};
-const context={console,Math,Set,setTimeout,clearTimeout,Image:class{constructor(){this.complete=true;this.naturalWidth=64;this.naturalHeight=64;}decode(){return Promise.resolve();}},devicePixelRatio:1,document:{getElementById:element,addEventListener(){},createElement:()=>({getContext:()=>({drawImage(){}})})},window:{addEventListener(){}},ResizeObserver:class{observe(){}},requestAnimationFrame(){}};element('game').getContext=()=>({setTransform(){}});vm.createContext(context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/boss.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/game.js','utf8'),context);const run=s=>vm.runInContext(s,context);
+const context={console,Math,Set,setTimeout,clearTimeout,Image:class{constructor(){this.complete=true;this.naturalWidth=64;this.naturalHeight=64;}decode(){return Promise.resolve();}},devicePixelRatio:1,document:{getElementById:element,addEventListener(){},createElement:()=>({getContext:()=>({drawImage(){}})})},window:{addEventListener(){}},ResizeObserver:class{observe(){}},requestAnimationFrame(){}};element('game').getContext=()=>({setTransform(){}});vm.createContext(context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/boss.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/surf.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/game.js','utf8'),context);const run=s=>vm.runInContext(s,context);
 function test(name,body){body();console.log('PASS',name);}
 (async()=>{
 await run('loadGameAssets()');
 test('Initial asset loading finishes before opening the main menu',()=>{assert.equal(run('assetsReady'),true);assert.equal(run('state'),'intro');assert.equal(element('start').disabled,false);assert.equal(element('loadingScreen').hidden,true);assert.ok(run('!!mutedFloor'));});
+test('Surf assets load and cache before play alongside the existing art',()=>{
+  assert.equal(run('gameAssets.length'),10);assert.ok(run('gameAssets.some(a=>a.image===heroSurfSprite)'));assert.ok(run('gameAssets.some(a=>a.image===surfItemSprite)'));
+  assert.equal(run('renderSprite(heroSurfSprite).height'),240);assert.equal(run('renderSprite(surfItemSprite).width'),160);
+});
+test('Surf requires inventory and rescues a fallen player without spending charge',()=>{
+  run('reset();charge=40');assert.equal(run('activateSurf()'),false);assert.equal(run('special'),null);
+  run('surfStock=2;player.down=.7;player.recoil=.6;activateSurf()');assert.equal(run('surfStock'),1);assert.equal(run('charge'),40);assert.equal(run('special.mode'),'surf');assert.equal(run('special.duration'),2);assert.equal(run('player.down'),0);assert.equal(run('player.recoil'),0);assert.equal(run('stats.surfs'),1);
+  assert.equal(run('activateSurf()'),false);assert.equal(run('surfStock'),1);run('activate()');assert.equal(run('special.mode'),'surf');
+});
+test('Scheduled boards appear at 15, 45, 75 and 105 seconds and do not repeat in boss fights',()=>{
+  run('reset();enemies=[];elapsed=14.9;updateSurfItems(.1,null)');assert.equal(run('surfPickups.length'),0);
+  for(const time of [15,45,75,105]){context.surfScheduleTime=time;run('elapsed=surfScheduleTime;updateSurfItems(.1,null)');}
+  assert.equal(run('surfPickups.length'),4);assert.equal(run('nextSurfAt'),135);
+  run('startBossBattle();elapsed=200;updateSurfItems(.1,null)');assert.equal(run('surfPickups.length'),4);
+});
+test('Boards persist, enemies cannot collect them, and three is the inventory cap',()=>{
+  run("reset();enemies=[];player.x=500;surfPickups=[{id:1,x:0,y:0,age:999}];spawn(0,'normal',{x:0,y:0});updateSurfItems(.1,null)");assert.equal(run('surfPickups.length'),1);assert.equal(run('surfStock'),0);
+  run('player.x=0;surfStock=3;updateSurfItems(.1,null)');assert.equal(run('surfPickups.length'),1);
+  run('surfStock=2;updateSurfItems(.1,null)');assert.equal(run('surfStock'),3);assert.equal(run('surfPickups.length'),0);
+});
+test('Boards require landing but can be collected along a surf or dash path',()=>{
+  run('reset();enemies=[];spawnSurfPickup({x:0,y:0});player.z=60;updateSurfItems(.1,null)');assert.equal(run('surfStock'),0);
+  run('player.z=0;updateSurfItems(.1,null)');assert.equal(run('surfStock'),1);
+  run('spawnSurfPickup({x:60,y:0});activateSurf();update(.3)');assert.equal(run('surfStock'),1);assert.equal(run('surfPickups.length'),0);
+});
+test('Every third defeated large green drops a board and red ripening does not count',()=>{
+  run("reset();enemies=[];var redForSurf=spawn(0,'thrower',{x:400,y:0});hitEnemy(redForSurf,false)");assert.equal(run('greenSurfKills'),0);
+  run("for(let i=0;i<3;i++){var greenForSurf=spawn(0,'charger',{x:400+i*50,y:0});hitEnemy(greenForSurf,false)}");assert.equal(run('greenSurfKills'),3);assert.equal(run('surfPickups.length'),1);
+});
+test('Boss health milestones supply one board each exactly once',()=>{
+  run("reset();enemies=[];startBossBattle();for(const hp of [7,4,2]){boss.hp=hp;onBossHealthChanged();onBossHealthChanged()}");assert.equal(run('surfPickups.length'),3);
+});
+test('Surf steers gradually, protects from damage, and leaves brief landing protection',()=>{
+  run("reset();enemies=[];spawnClock=999;surfStock=1;activateSurf();keys.add('w');update(.2)");assert.ok(run('special.dy')<-.5);assert.ok(run('special.dx')>0);assert.equal(run('charge'),0);
+  run("hurt('surf collision')");assert.equal(run('player.hp'),5);
+  run('peels=[];keys.clear();update(1);update(1)');assert.equal(run('special'),null);assert.ok(run('player.inv')>=.35);assert.ok(run('player.slipCooldown')>=.6);
+});
+test('Surf consumes peels along its path, extends by 0.2 each, and stops at four seconds',()=>{
+  run('reset();enemies=[];spawnClock=999;surfStock=1;activateSurf();peels=[{id:11,x:20,y:0,age:1},{id:12,x:35,y:0,age:1}];update(.1)');assert.equal(run('peels.length'),0);assert.equal(run('special.duration'),2.4);
+  run('for(let i=0;i<10;i++)peels.push({id:30+i,x:player.x+20,y:player.y,age:1});update(.1)');assert.equal(run('special.duration'),4);
+  run('peels=[];update(1);update(1);update(1);update(.8)');assert.equal(run('special'),null);
+});
+test('Surf fuel counts down, visibly refills on peels, and hides after landing',()=>{
+  run('reset();enemies=[];spawnClock=999;surfStock=1;activateSurf()');assert.equal(element('surfGauge').hidden,false);assert.equal(element('surfTime').textContent,'2.0s');assert.equal(element('surfFuel').style.width,'50%');
+  run('update(.5)');assert.equal(element('surfTime').textContent,'1.5s');assert.equal(element('surfFuel').style.width,'37.5%');
+  run('peels=[{id:81,x:player.x+10,y:player.y,age:1}];update(.1)');assert.equal(element('surfTime').textContent,'1.6s');assert.ok(parseFloat(element('surfFuel').style.width)>37.5);assert.ok(run('special.feedFlash')>0);assert.ok(run("texts.some(t=>t.text==='衝浪 +0.2s')"));
+  run('pause()');assert.equal(element('surfGauge').hidden,true);run('pause();peels=[];update(1);update(1)');assert.equal(element('surfGauge').hidden,true);
+});
+test('Surf preserves reserved ritual peels and consumes ordinary red peels',()=>{
+  run('reset();enemies=[];spawnClock=999;surfStock=1;activateSurf();peels=[{id:51,x:20,y:0,age:1,ritual:true},{id:52,x:20,y:0,age:1,summonWave:true},{id:53,x:20,y:0,age:1,red:true}];feedSurf(special,0,0)');assert.equal(run('peels.length'),2);assert.ok(run('peels.every(p=>p.ritual||p.summonWave)'));
+});
+test('Surf hits each enemy once and pushes survivors away without generating stomp energy',()=>{
+  run("reset();enemies=[];spawnClock=999;var surfVictim=spawn(0,'normal',{x:60,y:0});surfVictim.hp=2;surfVictim.speed=0;surfStock=1;activateSurf();update(.1)");assert.equal(run('surfVictim.hp'),1);assert.ok(run('surfVictim.kx')>0);assert.equal(run('charge'),0);assert.equal(run('stats.stompHits'),0);
+  run('surfVictim.x=player.x;surfVictim.y=player.y;surfVictim.hit=0;surfVictim.knock=0;update(.01)');assert.equal(run('surfVictim.hp'),1);
+});
+test('Surf also damages the boss while retaining four-second boss immunity',()=>{
+  run("reset();enemies=[];startBossBattle();boss.phase='rest';boss.time=99;boss.x=80;boss.y=0;player.x=0;player.y=0;surfStock=1;activateSurf();update(.1)");assert.equal(run('boss.hp'),9);assert.ok(run('special'));assert.equal(run('player.recoil'),0);assert.ok(run('boss.hit')>3.8);
+});
+test('K key activates surf, pause freezes it, and restart clears inventory and drops',()=>{
+  run("reset();enemies=[];surfStock=2;handleKeyDown({code:'KeyK',key:'k',preventDefault(){}})");assert.equal(run('special.mode'),'surf');assert.equal(run('surfStock'),1);
+  run('pause();var surfPausedAt=special.t;update(1)');assert.equal(run('special.t'),run('surfPausedAt'));
+  run('pause();spawnSurfPickup();reset()');assert.equal(run('surfStock'),0);assert.equal(run('surfPickups.length'),0);assert.equal(run('special'),null);assert.equal(run('greenSurfKills'),0);
+});
 test('Insufficient charge cannot activate',()=>{run('reset();charge=99;activate()');assert.equal(run('special'),null);assert.equal(run('charge'),99);});
 test('First stomp gives 0.2 and consecutive stomp gives 0.1; unripe banana needs two',()=>{run("reset();enemies=[];const e={id:999,x:0,y:0,hp:2,type:'thick',hit:0,color:'#fff'};hitEnemy(e,true)");assert.equal(run('e.hp'),1);assert.equal(run('charge'),20);run('e.hit=0;hitEnemy(e,true)');assert.equal(run('e.hp'),0);assert.equal(run('charge'),30);assert.equal(run('peels.length'),1);});
 test('Enemy damage knocks down and gives immunity',()=>{run("reset();hurt('撞到香蕉')");assert.equal(run('player.hp'),4);assert.equal(run('player.down'),.5);assert.equal(run('player.inv'),1.8);run("hurt('撞到香蕉')");assert.equal(run('player.hp'),4);});
@@ -13,6 +76,23 @@ test('Descending stomp bounces safely above new peel',()=>{run("reset();enemies=
 test('Peel causes long slide without damage or immunity',()=>{run('reset();enemies=[];spawnClock=100;peels=[{x:0,y:0,age:1}];update(.01)');assert.equal(run('player.hp'),5);assert.equal(run('player.inv'),0);assert.equal(run('player.down'),.7);run('for(let i=0;i<70;i++)update(.01)');assert.ok(run('player.x')>200);assert.equal(run('player.hp'),5);assert.equal(run('player.down'),0);});
 test('Enemy contact during sliding deals damage, then immunity prevents repeats',()=>{run("reset();enemies=[];peels=[{x:0,y:0,age:1}];update(.01);enemies=[{id:2,x:10,y:0,hp:1,type:'normal',hit:0,speed:0,knock:0}];update(.01)");assert.equal(run('player.hp'),4);assert.ok(run('player.inv')>0);assert.ok(run('player.slipX')>400);run('enemies[0].x=player.x;update(.01)');assert.equal(run('player.hp'),4);});
 test('Durian contact during sliding also deals damage',()=>{run("reset();enemies=[];slip(player,0);enemies=[{id:2,x:5,y:0,hp:1,type:'durian',hit:0,speed:0,knock:0}];update(.01)");assert.equal(run('player.hp'),4);});
+test('Slipping enemies of every type are harmless until they stand up',()=>{
+  for(const type of ['normal','charger','thrower','durian']){
+    context.slippingEnemyType=type;
+    run("reset();enemies=[];spawnClock=999;var fallenContact=spawn(0,slippingEnemyType,{x:0,y:0});slip(fallenContact,0);fallenContact.slipX=fallenContact.slipY=0;update(.2)");
+    assert.ok(run('fallenContact.down')>0);assert.equal(run('player.hp'),5);
+    run('update(.49)');assert.ok(run('fallenContact.down')>0);assert.equal(run('player.hp'),5);
+    run('update(.02)');assert.equal(run('fallenContact.down'),0);assert.equal(run('player.hp'),4);
+  }
+});
+test('An enemy tripped on this frame cannot deal contact damage on that frame',()=>{
+  run("reset();enemies=[];spawnClock=999;player.slipCooldown=1;var justTripped=spawn(0,'normal',{x:0,y:0});peels=[{id:88001,x:0,y:0,age:1}];update(.01)");
+  assert.ok(run('justTripped.down')>0);assert.equal(run('peels.length'),0);assert.equal(run('player.hp'),5);
+});
+test('A sliding player remains vulnerable when a fallen enemy gets back up',()=>{
+  run("reset();enemies=[];spawnClock=999;var wakingEnemy=spawn(0,'normal',{x:0,y:0});slip(player,0);player.slipX=player.slipY=0;slip(wakingEnemy,0);wakingEnemy.slipX=wakingEnemy.slipY=0;wakingEnemy.down=.1;update(.05)");assert.equal(run('player.hp'),5);assert.ok(run('player.down')>0);
+  run('update(.06)');assert.equal(run('wakingEnemy.down'),0);assert.ok(run('player.down')>0);assert.equal(run('player.hp'),4);assert.ok(run('player.inv')>0);
+});
 test('Every enemy type slips on peels without losing health',()=>{for(const type of ['normal','thick','durian']){run(`reset();player.x=500;spawnClock=100;enemies=[{id:3,x:0,y:0,hp:2,type:'${type}',hit:0,speed:0,knock:0}];peels=[{x:0,y:0,age:1}];update(.01)`);assert.equal(run('enemies[0].down'),.7);run('for(let i=0;i<70;i++)update(.01)');assert.ok(run('enemies[0].x')>200);assert.equal(run('enemies[0].hp'),2);assert.equal(run('enemies[0].down'),0);}});
 test('Pause freezes gameplay and resumes; restart clears state',()=>{run('reset();pause()');assert.equal(run('state'),'paused');run('pause()');assert.equal(run('state'),'playing');run('charge=180;kills=7;reset()');assert.equal(run('charge'),0);assert.equal(run('kills'),0);});
 test('Surviving 120 seconds freezes existing minions and starts the boss entrance',()=>{run('reset();elapsed=119.99;var oldMinions=enemies.length;durianWarnings=[{x:0,y:0,at:121}];update(.02)');assert.equal(run('state'),'playing');assert.equal(run('elapsed'),120);assert.equal(run('boss.hp'),10);assert.equal(run('boss.phase'),'entrance');assert.equal(run('boss.time'),3);assert.equal(run('enemies.length'),run('oldMinions'));assert.equal(run('durianWarnings.length'),1);assert.equal(element('gameClock').hidden,true);assert.equal(element('bossHud').hidden,false);});
@@ -166,14 +246,14 @@ test('Victory fanfare lasts three times longer with varied rhythm, melody, and a
 test('Victory and defeat display distinct couplets',()=>{run('reset();finish(true)');assert.ok(element('overlayTitle').innerHTML.includes('歷盡千蕉百難'));assert.ok(element('overlayTitle').innerHTML.includes('終成不敗蕉王'));assert.equal(element('overlayTitle').innerHTML.includes('蕉有旦夕禍福'),false);run('reset();finish(false)');assert.ok(element('overlayTitle').innerHTML.includes('天有不測風雲'));assert.ok(element('overlayTitle').innerHTML.includes('蕉有旦夕禍福'));assert.equal(element('overlayTitle').innerHTML.includes('終成不敗蕉王'),false);});
 
 test('Invincible mode is enabled only by the unlocked debug checkbox and prevents all damage',()=>{run("debugUnlocked=false;$('debugInvincible').checked=true;reset();hurt('normal damage')");assert.equal(run('invincibleMode'),false);assert.equal(run('player.hp'),4);run("debugUnlocked=true;$('debugStart').value='120';reset();enemies=[];spawnClock=100;spawn(0,'normal',{x:0,y:0});update(.01);hurt('durian damage')");assert.equal(run('invincibleMode'),true);assert.equal(run('player.hp'),5);assert.equal(run('player.down'),0);run("enemies=[];var safeDurian=spawn(0,'durian',{x:-100,y:0});safeDurian.projectile={t:0,duration:1,startZ:50,fromX:-100,fromY:0,toX:100,toY:0};updateThrownDurian(safeDurian,1)");assert.equal(run('player.hp'),5);assert.equal(run('player.inv'),0);});
-test('Invincible players can still slip, stomp and win; unchecking restores normal damage',()=>{run("enemies=[];slip(player,0);hitEnemy({id:24001,x:50,y:0,hp:1,type:'normal',hit:0},true)");assert.equal(run('player.down'),.7);assert.equal(run('player.hp'),5);assert.equal(run('charge'),20);run("elapsed=119.99;update(.02);for(let i=0;i<10;i++){boss.hit=0;boss.phase='rest';player.x=boss.x;player.y=boss.y;tryStompBoss();}");assert.equal(run('state'),'over');assert.ok(element('overlayTitle').innerHTML.includes('終成不敗蕉王'));run("$('debugInvincible').checked=false;reset();hurt('normal damage restored')");assert.equal(run('invincibleMode'),false);assert.equal(run('player.hp'),4);run('debugUnlocked=false');});
+test('Invincible players can still slip, stomp and win; unchecking restores normal damage',()=>{run("enemies=[];slip(player,0);hitEnemy({id:24001,x:50,y:0,hp:1,type:'normal',hit:0},true)");assert.equal(run('player.down'),.7);assert.equal(run('player.hp'),5);assert.equal(run('charge'),20);run("elapsed=119.99;update(.02);for(let i=0;i<12;i++){boss.hit=0;boss.phase='rest';player.x=boss.x;player.y=boss.y;tryStompBoss();if(isBossCinematic())updateBossCinematic(10);}");assert.equal(run('state'),'over');assert.ok(element('overlayTitle').innerHTML.includes('終成不敗蕉王'));run("$('debugInvincible').checked=false;reset();hurt('normal damage restored')");assert.equal(run('invincibleMode'),false);assert.equal(run('player.hp'),4);run('debugUnlocked=false');});
 
 test('Mobile character scale is 0.7 and narrow or coarse layouts share the same detection',()=>{assert.equal(run('characterScale()'),1);run("window.matchMedia=query=>({matches:query.includes('pointer: coarse')})");assert.equal(run('characterScale()'),.7);run('window.matchMedia=()=>({matches:false})');assert.equal(run('characterScale()'),1);run('delete window.matchMedia');});
 test('Mobile enemy collision footprints shrink with sprites',()=>{run("window.matchMedia=()=>({matches:true});reset();enemies=[];spawnClock=100;var smallMobileEnemy=spawn(0,'normal',{x:24,y:0});smallMobileEnemy.speed=0;update(.001)");assert.equal(run('player.hp'),5);run('smallMobileEnemy.x=10;update(.001)');assert.equal(run('player.hp'),4);run('delete window.matchMedia');});
 
 
 test('Sprite caches include all frames and large variants at DPR-2 resolution',()=>{
-  assert.equal(run('renderSprites.size'),7);assert.equal(run('renderSprites.get(enemySprite).size'),8);
+  assert.equal(run('renderSprites.size'),9);assert.equal(run('renderSprites.get(enemySprite).size'),8);
   assert.equal(run('renderSprite(enemySprite,0,1).height'),192);assert.equal(run('renderSprite(enemySprite,0,2).height'),384);
   assert.equal(run('renderSprite(groundSprite,2).height'),256);assert.equal(run('renderSprite(bossSprite).height'),410);
   assert.equal(run('renderSprite(heroSprite)===renderSprite(heroSprite)'),true);assert.equal(run('renderSprite(heroSlipSprite)===renderSprite(heroHurtSprite)'),false);
@@ -242,14 +322,34 @@ test('Restart during an entrance removes the banner and all transition state',()
   run('reset();startBossBattle();update(4.1)');assert.equal(element('bossBanner').hidden,false);
   run('reset()');assert.equal(run('boss'),null);assert.equal(element('bossBanner').hidden,true);assert.equal(run('state'),'playing');
 });
-test('Boss requires ten separate stomps and both characters recoil in opposite directions',()=>{
+test('Boss has ten HP, requires clearing final clones, and recoils opposite the player',()=>{
   run("reset();enemies=[];startBossBattle();boss.phase='revive';boss.hit=0;player.x=boss.x+10;player.y=boss.y;var bossBeforeX=boss.x,heroBeforeX=player.x;tryStompBoss()");
   assert.equal(run('boss.hp'),9);assert.equal(run('boss.phase'),'stunned');assert.equal(run('boss.hit'),4);
   assert.equal(run('player.down'),0);assert.equal(run('player.z'),43);assert.equal(run('player.vz'),200);assert.equal(run('player.recoil'),.7);assert.ok(run('player.inv')>=1);
   assert.ok(run('boss.kx')<0);assert.ok(run('player.recoilX')>0);assert.equal(run('combo'),0);assert.equal(run('tryStompBoss()'),false);
   run('update(.2)');assert.ok(run('boss.x')<run('bossBeforeX'));assert.ok(run('player.x')>run('heroBeforeX'));assert.equal(run('player.down'),0);
-  run("for(let i=0;i<9;i++){boss.hit=0;boss.phase='rest';player.x=boss.x;player.y=boss.y;tryStompBoss();}");
+  run("for(let i=0;i<11;i++){boss.hit=0;boss.phase='rest';player.x=boss.x;player.y=boss.y;tryStompBoss();if(isBossCinematic())updateBossCinematic(10);}");
   assert.equal(run('state'),'over');assert.equal(run('boss.hp'),0);assert.ok(element('overlayTitle').innerHTML.includes('終成不敗蕉王'));
+});
+test('Dash damages the boss once without bouncing or awarding stomp energy',()=>{
+  run("reset();enemies=[];startBossBattle();boss.phase='rest';boss.time=99;boss.x=80;boss.y=0;player.x=0;player.y=0;player.face=0;charge=100;activate();update(.05)");
+  assert.equal(run('boss.hp'),9);assert.ok(run('boss.hit')>3.9);assert.equal(run('player.recoil'),0);assert.ok(run('special'));assert.equal(run('charge'),0);assert.equal(run('stats.stompHits'),0);
+  run('boss.hit=0;boss.knock=0;boss.x=player.x;boss.y=player.y;update(.01)');assert.equal(run('boss.hp'),9);
+});
+test('Dash swept collision hits the boss between frames and respects immunity and shields',()=>{
+  run("reset();enemies=[];startBossBattle();boss.phase='rest';boss.time=99;boss.x=100;boss.y=0;player.x=0;player.y=0;player.face=0;charge=100;activate();update(.4)");assert.equal(run('boss.hp'),9);
+  for(const phase of ['shield','rest']){context.blockingBossPhase=phase;run("reset();enemies=[];startBossBattle();boss.phase=blockingBossPhase;boss.time=99;boss.hit=blockingBossPhase==='rest'?4:0;boss.x=80;boss.y=0;player.x=0;player.y=0;player.face=0;charge=100;activate();update(.05)");assert.equal(run('boss.hp'),10);}
+});
+test('Dash kills clones and can win the final boss phase through original inheritance',()=>{
+  run("reset();enemies=[];startBossBattle();boss.phase='rest';boss.time=99;boss.hp=1;boss.x=80;boss.y=0;player.x=0;player.y=0;player.face=0;var dashClone=spawnBossClone({x:400,y:0});dashClone.hit=0;charge=100;activate();update(.05)");assert.equal(run('boss.hp'),1);assert.equal(run('bossClones.length'),0);assert.equal(run('boss.x'),400);assert.equal(run('stats.stompKills'),0);
+  run("special=null;boss.hit=0;boss.phase='rest';player.x=320;player.y=0;charge=100;activate();update(.05)");assert.equal(run('boss.hp'),0);assert.equal(run('state'),'over');assert.equal(run('stats.stompHits'),0);
+  run("reset();enemies=[];startBossBattle();boss.phase='rest';boss.time=99;boss.x=-500;boss.hp=2;player.x=0;player.y=0;player.face=0;spawnBossClone({x:80,y:0}).hit=0;charge=100;activate();update(.05)");assert.equal(run('bossClones.length'),0);assert.equal(run('boss.hp'),2);
+});
+test('A promoted nearby clone is not damaged again by the same dash snapshot',()=>{
+  run("reset();enemies=[];startBossBattle();boss.phase='rest';boss.time=99;boss.hp=1;boss.x=80;boss.y=0;player.x=0;player.y=0;player.face=0;spawnBossClone({x:90,y:0}).hit=0;charge=100;activate();update(.05)");assert.equal(run('boss.hp'),1);assert.equal(run('bossClones.length'),0);assert.equal(run('kills'),1);assert.equal(run('state'),'playing');
+});
+test('Dash boss hits safely enter health-stage cinematics without spending them moving',()=>{
+  run("reset();enemies=[];startBossBattle();boss.phase='rest';boss.hp=6;boss.x=80;boss.y=0;player.x=0;player.y=0;player.face=0;charge=100;activate();update(.05)");assert.equal(run('boss.hp'),5);assert.equal(run('isBossCinematic()'),true);assert.equal(run('boss.time'),6);
 });
 test('Boss cannot be damaged again for four seconds but resumes attacking before immunity ends',()=>{
   run("reset();enemies=[];startBossBattle();boss.phase='rest';player.x=boss.x;player.y=boss.y;tryStompBoss();player.inv=99;updateBoss(.7)");
@@ -270,7 +370,11 @@ test('Ultimate can interrupt airborne recoil without leaving residual knockback'
 test('Boss knockback stays within arena bounds',()=>{
   run("reset();enemies=[];startBossBattle();boss.x=-arenaSize+132;boss.y=0;boss.phase='rest';player.x=boss.x+10;player.y=0;tryStompBoss();updateBoss(.5)");assert.ok(run('boss.x')>=run('-arenaSize+130'));
 });
-test('Boss resurrection creates 3 to 6 new yellow minions plus up to six revived peels',()=>{run("reset();enemies=[];peels=[];startBossBattle();peels=[];for(let i=0;i<9;i++)peels.push({id:31000+i,x:boss.x+i,y:boss.y,age:1});boss.move=1;beginBossMove()");assert.equal(run('boss.phase'),'revive');assert.equal(run('boss.time'),3);const summoned=run('boss.summonPoints.length');assert.ok(summoned>=3&&summoned<=6);run('updateBoss(2.9)');assert.equal(run('enemies.length'),0);run('updateBoss(.11)');assert.equal(run('enemies.length'),summoned+6);assert.equal(run('peels.length'),3);assert.ok(run("enemies.every(e=>e.type==='normal'&&e.hp===1)"));});
+test('Boss resurrection consumes at most twelve actual peels and creates nothing without them',()=>{
+  run("reset();enemies=[];startBossBattle();peels=[];boss.move=1;beginBossMove();updateBoss(3.01)");assert.equal(run('enemies.length'),0);
+  run("for(let i=0;i<15;i++)peels.push({id:31000+i,x:boss.x+i,y:boss.y,age:1});boss.move=1;beginBossMove()");assert.equal(run('boss.revivePeels.length'),12);
+  run('updateBoss(2.9)');assert.equal(run('enemies.length'),0);run('updateBoss(.11)');assert.equal(run('enemies.length'),12);assert.equal(run('peels.length'),3);assert.ok(run("enemies.every(e=>e.type==='normal'&&e.hp===1)"));
+});
 test('Boss sea launches three outward peel rings which remain when stopped',()=>{run("reset();enemies=[];startBossBattle();peels=[];boss.move=0;beginBossMove();updateBoss(1.01)");assert.equal(run('boss.phase'),'sea');run('updateBoss(.01);updateBoss(.3);updateBoss(.3)');assert.equal(run('peels.length'),36);const initial=run('dist(peels[0],boss)');run('updatePeels(.2)');assert.ok(run('dist(peels[0],boss)')>initial);run('updatePeels(5)');assert.ok(run('peels.every(p=>!p.bossWave)'));assert.equal(run('peels.length'),36);});
 test('Boss fan fire uses a locked direction and hurts players below the jump apex',()=>{run("reset();enemies=[];startBossBattle();boss.move=2;beginBossMove();var lockedBossAim=boss.aim;player.inv=99;updateBoss(1.01)");assert.equal(run('bossShots.length'),3);assert.ok(Math.abs(run('Math.atan2(bossShots[1].vy,bossShots[1].vx)')-run('lockedBossAim'))<1e-8);run('player.inv=0;player.z=40;bossShots=[{x:player.x-40,y:player.y,vx:200,vy:0,life:2}];updateBoss(.2)');assert.equal(run('player.hp'),4);assert.equal(run('bossShots.length'),0);});
 test('Ghost fire passes under the jump apex but still hits early and late jump heights',()=>{
@@ -285,22 +389,20 @@ test('Normal jumping has a brief ghost-fire dodge window and returns to vulnerab
 });
 test('Low-health boss always charges for a full second before releasing its first row',()=>{
   run("reset();enemies=[];startBossBattle();boss.hp=1;boss.move=2;beginBossMove();player.inv=99;updateBoss(.99)");
-  assert.equal(run('boss.phase'),'fire-aim');assert.equal(run('bossShots.length'),0);run('updateBoss(.02)');assert.equal(run('boss.phase'),'fire');assert.equal(run('bossShots.length'),9);
+  assert.equal(run('boss.phase'),'fire-aim');assert.equal(run('bossShots.length'),0);run('updateBoss(.02)');assert.equal(run('boss.phase'),'fire');assert.equal(run('bossShots.length'),7);
 });
 test('Boss battle disables natural enemy spawns and has no countdown limit',()=>{run("reset();enemies=[];startBossBattle();boss.phase='rest';boss.time=999;boss.x=800;boss.y=800;player.inv=999;nextPickupAt=999;elapsed=200;spawnClock=0;nextDurianAt=0;nextChargerAt=0;nextThrowerAt=0;update(.1)");assert.equal(run('state'),'playing');assert.equal(run('enemies.length'),0);assert.equal(element('finalCountdown').hidden,true);assert.equal(element('gameClock').hidden,true);assert.equal(run('boss.hp'),10);});
 test('Debug menu can enter the boss battle with peels and a fresh ten-banana health bar',()=>{run("debugUnlocked=true;$('debugStart').value='boss';reset()");assert.equal(run('elapsed'),120);assert.equal(run('boss.hp'),10);assert.equal(run('enemies.length'),7);assert.equal(run('boss.phase'),'entrance');assert.ok(run('peels.length')>=8);assert.equal(element('bossHud').hidden,false);assert.equal((element('bossBananas').innerHTML.match(/class="health-banana/g)||[]).length,10);run("debugUnlocked=false;$('debugStart').value='120';reset()");assert.equal(run('boss'),null);assert.equal(element('bossHud').hidden,true);assert.equal(element('gameClock').hidden,false);});
-test('Lower health increases ghost-fire shots, rows and firing frequency with a fixed one-second warning',()=>{
-  for(const [hp,count,rows,extra] of [[10,3,1,0],[7,5,2,1],[4,7,3,2],[2,9,5,3]]){
+test('Ghost fire strengthens at every early HP threshold and caps at three rows in two rounds',()=>{
+  for(const [hp,count,rows,rounds] of [[10,3,1,1],[9,4,1,1],[8,5,2,1],[7,6,3,1],[6,7,3,2],[1,7,3,2]]){
     run(`reset();enemies=[];startBossBattle();boss.hp=${hp};boss.move=2;beginBossMove();player.inv=99;var firePlan=bossFirePattern(),warning=boss.time;updateBoss(warning+.001)`);
-    assert.equal(run('firePlan.extra'),extra);assert.equal(run('bossShots.length'),count);assert.equal(run('boss.fireRows'),rows-1);
-    if(rows>1){run('updateBoss(firePlan.gap-.01)');assert.equal(run('bossShots.length'),count);run('updateBoss(.011)');assert.equal(run('bossShots.length'),count*2);}
-    run('while(boss.fireRows>0)updateBoss(firePlan.gap)');assert.equal(run('bossShots.length'),count*rows);
-    assert.equal(run('warning'),1);assert.ok(run('bossShots.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y))'));
-    if(extra){run('boss.time=0;updateBoss(.001);boss.time=0;updateBoss(.001)');assert.equal(run('boss.phase'),'fire-aim');}
+    assert.equal(run('warning'),1);assert.equal(run('bossShots.length'),count);assert.equal(run('boss.fireRows'),rows*rounds-1);
+    run('while(boss.fireRows>0)updateBoss(.02)');assert.equal(run('bossShots.length'),count*rows*rounds);assert.ok(run('boss.firePattern.rows')<=3);assert.ok(run('boss.firePattern.rounds')<=2);
+    run('updateBoss(2.7)');assert.equal(run('bossShots.length'),0);
   }
 });
 test('Stomping cancels pending fire rows without clearing already flying projectiles',()=>{
-  run("reset();enemies=[];startBossBattle();boss.hp=2;boss.move=2;beginBossMove();releaseBossFire();player.x=boss.x;player.y=boss.y;player.inv=99;tryStompBoss();updateBoss(.3)");assert.equal(run('boss.fireRows'),0);assert.equal(run('bossShots.length'),9);assert.equal(run('boss.hp'),1);
+  run("reset();enemies=[];startBossBattle();boss.hp=4;boss.move=2;beginBossMove();releaseBossFire();player.x=boss.x;player.y=boss.y;player.inv=99;tryStompBoss();updateBoss(.3)");assert.equal(run('boss.fireRows'),0);assert.equal(run('bossShots.length'),7);assert.equal(run('boss.hp'),3);
 });
 test('Boss entry replaces the accelerated survival song and stays at unity rate through pause and final HP',()=>{
   run(`var bossSongStarts=[],bossSongStops=[],bossSongRates=[];
@@ -316,6 +418,97 @@ test('Boss entry replaces the accelerated survival song and stays at unity rate 
   run('bossElapsed=8;pause();pause()');assert.equal(run('musicSource.buffer===dedicatedBossSource.buffer'),true);assert.equal(run('bossSongStarts.at(-1)[1]'),8);
   run('boss.hp=1;syncMusic()');assert.equal(run('musicSource.buffer.duration'),30);assert.notEqual(run('musicSource.buffer===dedicatedBossSource.buffer'),true);assert.equal(run('musicRate(999)'),1);assert.equal(run('bossSongRates.every(rate=>rate===1)'),true);
   run('sound=false;syncMusic();audioCtx=undefined;audioOutput=null;musicBuffer=null;boss=null;reset()');
+});
+test('Main menu starts a boss battle without unlocking debug and can return to normal mode',()=>{
+  run("debugUnlocked=false;$('gameMode').value='boss';reset()");assert.equal(run('boss.hp'),10);assert.equal(run('elapsed'),120);assert.equal(run('isBossEntrance()'),true);assert.equal(element('modeOptions').hidden,true);
+  run("$('gameMode').value='survival';reset()");assert.equal(run('boss'),null);assert.equal(run('elapsed'),0);assert.equal(run('bossClones.length'),0);
+});
+run(`function seedQuadrantPeels(){peels=[];for(const x of [.25,.75])for(const y of [.25,.75])for(const [dx,dy] of [[-32,20],[32,20],[0,-30]])peels.push({id:serial++,...bossViewportPoint(W*x+dx,H*y+dy),age:1});}`);
+test('Seven HP enables a telegraphed teleport to the visible opposite side without moving the player',()=>{
+  run("reset();enemies=[];startBossBattle();boss.hp=7;onBossHealthChanged();boss.x=player.x+200;boss.nextTeleport=0;var teleportPlayer=JSON.stringify(player);beginBossMove()");assert.equal(run('boss.phase'),'teleport-aim');
+  run('updateBoss(.71)');assert.equal(run('boss.phase'),'rest');assert.ok(run('screen(boss.x,boss.y).x')<run('W/2'));assert.ok(run('dist(boss,player)')>115);assert.equal(run('JSON.stringify(player)'),run('teleportPlayer'));
+});
+test('Six HP shield charges one second, damages even high jumps for three seconds, and blocks stomps',()=>{
+  run("reset();enemies=[];startBossBattle();boss.hp=6;onBossHealthChanged();boss.nextShield=0;boss.x=0;boss.y=0;player.x=70;player.y=0;player.z=65;player.inv=0;beginBossMove();updateBoss(.99)");
+  assert.equal(run('boss.phase'),'shield-aim');assert.equal(run('player.hp'),5);run('updateBoss(.02)');assert.equal(run('boss.phase'),'shield');assert.equal(run('player.hp'),4);
+  run('player.x=0;player.inv=0');assert.equal(run('tryStompBoss()'),false);assert.equal(run('boss.hp'),6);run('updateBoss(2.9)');assert.equal(run('boss.phase'),'shield');run('updateBoss(.11)');assert.equal(run('boss.phase'),'rest');
+});
+test('Five HP first releases a wide quake, then gathers its peels into four large greens while control is frozen',()=>{
+  run("reset();enemies=[];startBossBattle();boss.phase='rest';boss.hp=6;player.x=boss.x+10;player.y=boss.y;peels=[];pickups=[{id:41001,x:600,y:600,age:2}];charge=100;tryStompBoss();var stagePlayerX=player.x,stagePlayerY=player.y,stageElapsed=elapsed;keys.add('d');jump();activate();hurt('cinematic blocked');update(.8)");
+  assert.equal(run('boss.hp'),5);assert.equal(run('boss.phase'),'quadrants-cinematic');assert.equal(run('player.hp'),5);assert.equal(run('player.x'),run('stagePlayerX'));assert.equal(run('player.y'),run('stagePlayerY'));assert.equal(run('elapsed'),run('stageElapsed'));assert.equal(run('pickups[0].age'),2);
+  assert.equal(run('boss.x'),run('boss.cinematic.center.x'));assert.equal(run('boss.y'),run('boss.cinematic.center.y'));assert.equal(run('peels.length'),0);
+  run('update(1)');assert.ok(run('boss.z')>=89);assert.equal(run('peels.length'),24);assert.equal(run("enemies.filter(e=>e.type==='charger').length"),0);
+  run('update(.6);var ritualCenters=boss.cinematic.groups.map(group=>({...group.center}))');assert.equal(run('ritualCenters.length'),4);
+  run('update(2)');assert.equal(run("enemies.filter(e=>e.type==='charger').length"),4);assert.equal(run('peels.length'),12);assert.ok(run('ritualCenters.every(center=>enemies.some(e=>dist(e,center)<.001))'));
+  run('update(1.6)');assert.equal(run('isBossWorldFrozen()'),false);assert.equal(run('boss.z'),0);assert.equal(run('player.z'),0);assert.ok(run('player.inv')>=2.5);
+});
+test('Four HP seeds all quadrants with a quake before summoning without a cinematic',()=>{
+  run("reset();enemies=[];startBossBattle();boss.phase='rest';boss.hp=4;peels=[];onBossHealthChanged()");assert.equal(run('peels.length'),24);assert.equal(run('isBossCinematic()'),false);assert.equal(run('boss.rituals.length'),0);
+  run('updateBoss(.6)');assert.equal(run('enemies.length'),0);run('updateBoss(.31)');assert.equal(run('boss.rituals.length'),4);run('updateBoss(1.21)');assert.equal(run("enemies.filter(e=>e.type==='charger').length"),4);assert.equal(run('peels.length'),12);assert.ok(run('peels.every(p=>!p.ritual&&!p.summonWave)'));
+});
+test('Quake supply and reserved ritual peels cannot be stepped on or reused by resurrection',()=>{
+  run("reset();enemies=[];startBossBattle();boss.phase='rest';boss.hp=4;peels=[];onBossHealthChanged();var airborneSeed=peels[0];peels=[airborneSeed]");assert.equal(run('touchingPeel(airborneSeed)'),undefined);run('boss.move=1;beginBossMove()');assert.equal(run('boss.revivePeels.length'),0);
+  run('seedQuadrantPeels();boss.rituals=planQuadrantRituals();var reservedPeel=boss.rituals[0].sources[0];peels=[reservedPeel]');assert.equal(run('touchingPeel(reservedPeel)'),undefined);
+  run('boss.move=1;beginBossMove()');assert.equal(run('boss.revivePeels.length'),0);
+});
+test('Three and two HP each summon two red throwers with two durians per side exactly once',()=>{
+  run("reset();enemies=[];startBossBattle();boss.phase='rest';boss.hp=3;onBossHealthChanged();onBossHealthChanged()");assert.equal(run("enemies.filter(e=>e.type==='thrower').length"),2);assert.equal(run("enemies.filter(e=>e.type==='durian').length"),4);
+  assert.ok(run("enemies.filter(e=>e.type==='thrower').every(red=>enemies.filter(e=>e.type==='durian'&&dist(e,red)<80).length===2)"));
+  run('boss.hp=2;onBossHealthChanged()');assert.equal(run("enemies.filter(e=>e.type==='thrower').length"),4);assert.equal(run("enemies.filter(e=>e.type==='durian').length"),8);
+});
+test('One HP cinematic creates two clones, pauses safely, and all bodies must be stomped',()=>{
+  run("reset();enemies=[];startBossBattle();boss.phase='rest';boss.hp=2;player.x=boss.x;player.y=boss.y;tryStompBoss()");assert.equal(run('boss.hp'),1);assert.equal(run('isBossCinematic()'),true);assert.equal(run('bossClones.length'),0);
+  run('update(1);pause();var splitPause=boss.time;update(3)');assert.equal(run('boss.time'),run('splitPause'));run('pause();update(2)');assert.equal(run('bossClones.length'),2);assert.equal(run('isBossCinematic()'),false);
+  run('while(bossClones.length){bossClones[0].hit=0;player.x=bossClones[0].x;player.y=bossClones[0].y;tryStompBoss()}');assert.equal(run('bossClones.length'),0);assert.equal(run('boss.hp'),1);assert.equal(run('state'),'playing');
+  run("boss.hit=0;boss.phase='rest';player.x=boss.x;player.y=boss.y;tryStompBoss()");assert.equal(run('boss.hp'),0);assert.equal(run('state'),'over');
+});
+test('Stomping the original promotes a random surviving clone and keeps the last HP until all bodies die',()=>{
+  run("reset();enemies=[];startBossBattle();boss.hp=1;boss.phase='rest';boss.x=0;boss.y=0;spawnBossClone({x:300,y:0});spawnBossClone({x:-300,y:0});boss.hit=0;player.x=0;player.y=0;tryStompBoss()");assert.equal(run('boss.hp'),1);assert.equal(run('bossClones.length'),1);assert.ok(run('Math.abs(boss.x)')===300);assert.equal(run('state'),'playing');
+  run("bossClones[0].hit=0;player.x=bossClones[0].x;player.y=bossClones[0].y;tryStompBoss();boss.hit=0;boss.phase='rest';player.x=boss.x;player.y=boss.y;tryStompBoss()");assert.equal(run('state'),'over');assert.equal(run('boss.hp'),0);
+});
+test('Two HP summons one clone, one HP summons two, and only the original can summon',()=>{
+  run("reset();enemies=[];startBossBattle();boss.hp=2;boss.phase='rest';onBossHealthChanged();player.inv=99;beginBossMove();updateBoss(1.01)");assert.equal(run('bossClones.length'),1);assert.ok(run('boss.nextClone')>run('bossElapsed'));
+  run("boss.hp=1;boss.nextClone=0;beginBossMove();updateBoss(1.01)");assert.equal(run('bossClones.length'),3);
+  run('for(const clone of bossClones){clone.nextClone=0;beginBossMove(clone)}');assert.ok(run("bossClones.every(c=>c.phase!=='clone-aim')"));
+  run('boss.nextClone=0;beginBossMove();spawnBossClone({x:0,y:0});spawnBossCloneBatch()');assert.equal(run('bossClones.length'),3);assert.notEqual(run('boss.phase'),'clone-aim');
+});
+test('One HP cinematic respects the four-body cap with existing clones',()=>{
+  run("reset();enemies=[];startBossBattle();boss.hp=2;boss.phase='rest';spawnBossClone({x:300,y:0});spawnBossClone({x:-300,y:0});boss.hp=1;onBossHealthChanged();updateBossCinematic(3)");assert.equal(run('bossClones.length'),3);
+});
+test('Clones cast the same six rows of ghost fire as the original',()=>{
+  run("reset();enemies=[];startBossBattle();boss.phase='rest';boss.hp=2;bossShots=[];var caster=spawnBossClone({x:500,y:300});caster.move=2;caster.nextShield=Infinity;beginBossMove(caster)");assert.equal(run('caster.phase'),'fire-aim');assert.equal(run('caster.time'),1);
+  run('updateBossClones(1);for(let i=0;i<100;i++)updateBossClones(.015)');assert.equal(run('bossShots.length'),42);assert.ok(run('bossShots.every(s=>s.x===500&&s.y===295)'));
+});
+test('Clones release all three peel sea rings around their own location',()=>{
+  run("bossShots=[];peels=[];caster.phase='rest';caster.time=0;caster.move=0;caster.nextShield=Infinity;updateBossClones(.01);updateBossClones(1);for(let i=0;i<16;i++)updateBossClones(.05)");assert.equal(run('peels.length'),36);assert.ok(run('peels.every(p=>Math.abs(dist(p,caster)-40*characterScale())<1e-7)'));
+});
+test('Clone revival consumes at most twelve existing peels and cannot reuse another caster material',()=>{
+  run("enemies=[];peels=[];for(let i=0;i<15;i++)peels.push({id:serial++,x:caster.x+i,y:caster.y,age:1});caster.move=1;beginBossMove(caster);boss.move=1;boss.x=caster.x;boss.y=caster.y;boss.nextClone=Infinity;beginBossMove();releaseBossRevival();releaseBossRevival(caster)");assert.equal(run('enemies.length'),12);assert.equal(run('peels.length'),3);
+});
+test('Clone shields charge for one second, protect for three, and hurt airborne players',()=>{
+  run("enemies=[];boss.x=-1000;caster.x=300;caster.y=0;caster.nextShield=0;beginBossMove(caster)");assert.equal(run('caster.phase'),'shield-aim');assert.equal(run('caster.time'),1);
+  run('player.inv=0;player.stompGuard=0;player.hp=5;player.x=caster.x+80;player.y=caster.y;player.z=70;updateBossClones(1)');assert.equal(run('caster.phase'),'shield');assert.equal(run('caster.time'),3);assert.equal(run('player.hp'),4);
+  run('caster.hit=0;player.x=caster.x;player.y=caster.y');assert.equal(run('tryStompBoss()'),false);
+});
+test('Final phase with repeated clones remains finite during a full minute of battle',()=>{
+  run("reset();enemies=[];startBossBattle();boss.phase='rest';boss.hp=1;boss.nextClone=1;for(let i=0;i<3600;i++){player.inv=99;update(1/60)}");assert.equal(run('state'),'playing');assert.equal(run('bossClones.length'),3);assert.ok(run('bossShots.length')<300);assert.ok(run('bossClones.every(c=>Number.isFinite(c.x)&&Number.isFinite(c.y))'));
+});
+test('Stomping gives a solid, protected success bounce while damage retains its blink',()=>{
+  run("reset();enemies=[];startBossBattle();boss.phase='rest';boss.hit=0;player.x=boss.x;player.y=boss.y;tryStompBoss()");assert.equal(run('player.stompGuard'),1);assert.equal(run('playerDamageBlink()'),false);assert.ok(run("texts.some(t=>t.text==='踩中！')"));assert.equal(run('player.down'),0);
+  run('boss.x=1000;boss.time=99;for(let i=0;i<20;i++)update(.02)');assert.ok(run('player.inv')>0);assert.equal(run('playerDamageBlink()'),false);
+  run("player.inv=0;hurt('actual damage');player.inv=1.7");assert.equal(run('player.stompGuard'),0);assert.equal(run('playerDamageBlink()'),true);
+});
+test('Shield damage reaches the larger flame perimeter and remains avoidable outside it',()=>{
+  run("reset();enemies=[];startBossBattle();boss.phase='shield';boss.time=3;boss.hit=0;player.inv=0;player.x=boss.x+115;player.y=boss.y;updateBoss(.01)");assert.equal(run('player.hp'),4);
+  run("player.inv=0;player.x=boss.x+140;updateBoss(.01)");assert.equal(run('player.hp'),4);
+});
+test('Teleport has a visible 0.3 second windup before the position changes',()=>{
+  run("reset();enemies=[];startBossBattle();boss.hp=7;boss.nextTeleport=0;beginBossMove();var beforeTeleportX=boss.x,beforeTeleportY=boss.y;updateBoss(.29)");assert.equal(run('boss.phase'),'teleport-aim');assert.equal(run('boss.x'),run('beforeTeleportX'));assert.equal(run('boss.y'),run('beforeTeleportY'));
+  run('updateBoss(.02)');assert.equal(run('boss.phase'),'rest');assert.ok(run('boss.x!==beforeTeleportX||boss.y!==beforeTeleportY'));
+});
+test('Fire spread stays within a quarter circle and the quake radius exceeds the previous range',()=>{
+  run("reset();enemies=[];startBossBattle();boss.hp=6;boss.aim=0;releaseBossFire()");assert.ok(run('Math.atan2(bossShots.at(-1).vy,bossShots.at(-1).vx)-Math.atan2(bossShots[0].vy,bossShots[0].vx)')<=Math.PI/2);
+  assert.ok(run('bossSeaRadius()')>run('bossRadius()')*1.4);
 });
 test('Boss exclusive music and final-health arrangement are distinct 30-second loops',()=>{run("var bossAudioContext={createBuffer(_c,n,r){var data=new Float32Array(n);return{duration:n/r,getChannelData:()=>data};}},bossTrack=createBossMusicBuffer(bossAudioContext,false),bossFinalTrack=createBossMusicBuffer(bossAudioContext,true)");assert.equal(run('bossTrack.duration'),30);assert.equal(run('bossFinalTrack.duration'),30);assert.ok(run('bossTrack.getChannelData(0).every(Number.isFinite)'));assert.ok(run('bossFinalTrack.getChannelData(0).every(Number.isFinite)'));assert.ok(run('bossTrack.getChannelData(0).every(v=>Math.abs(v)<.65)'));assert.ok(run('Math.abs(bossTrack.getChannelData(0)[0]-bossTrack.getChannelData(0).at(-1))<.03'));assert.ok(run('bossTrack.getChannelData(0).some((v,i)=>v!==bossFinalTrack.getChannelData(0)[i])'));});
 
