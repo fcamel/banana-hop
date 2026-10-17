@@ -113,6 +113,7 @@ function tone(freq=440,duration=.08,type='sine',volume=.035,delay=0,endFreq=freq
 function sfx(name,pitch=1){
   if(!sound)return;unlockAudio();if(!audioCtx)return;const now=audioCtx.currentTime;if(now-(lastSfx.get(name)??-Infinity)<.04)return;lastSfx.set(name,now);
   if(name==='pickup')[660,880,1100].forEach((f,i)=>tone(f,.16,'triangle',.03,i*.07,f));
+  if(name==='ritualCharge'){tone(110,1.5,'triangle',.035,0,165);tone(165,1.3,'sine',.025,.15,290);}
   if(name==='bossCast'){tone(180,.3,'triangle',.025,0,360);tone(290,.25,'sine',.025,.1,140);}
   if(name==='bossSlam'){tone(85,.23,'triangle',.045,0,35);}
   if(name==='durianThrow'){tone(180,.11,'triangle',.045,0,620);tone(520,.25,'sine',.032,.07,100);tone(95,.09,'triangle',.035,.02,60);}
@@ -354,7 +355,7 @@ function updateCharger(e,dt,tempo=1){
   }
 }
 function updatePeels(dt){
-  for(const p of peels){p.prevX=p.x;p.prevY=p.y;if(moveBossPeel(p,dt))continue;
+  for(const p of peels){p.prevX=p.x;p.prevY=p.y;if(p.summonWave&&boss?.cinematic?.kind==='quadrants')continue;if(moveBossPeel(p,dt))continue;
     if(p.slideTime>0&&p.flightRemaining!==undefined){
       const speed=Math.hypot(p.vx,p.vy),limit=arenaSize-50;
       const dx=speed?p.vx/speed:0,dy=speed?p.vy/speed:0;
@@ -379,7 +380,7 @@ function touchingPeel(actor){return peels.find(p=>{
 
 function spawnBunch(){
   // Prefer unoccupied sides, resolving ties in left/right/top/bottom order.
-  const active=pickups.filter(p=>!p.collected&&p.age<18),counts=[0,0,0,0],limit=arenaSize-45;
+  const active=pickups.filter(p=>!p.collected),counts=[0,0,0,0],limit=arenaSize-45;
   for(const p of active){
     const dx=(p.x-player.x)/(W/2),dy=(p.y-player.y)*.72/(H/2);
     counts[Math.abs(dx)>=Math.abs(dy)?(dx<0?0:1):(dy<0?2:3)]++;
@@ -400,6 +401,7 @@ function spawnBunch(){
   const chosen=options[0];
   if(!chosen)return; // No reachable space outside this viewport.
   nextBunchSide=(chosen.side+1)%4;
+  pickups=active.slice(-1);
   pickups.push({id:serial++,x:chosen.x,y:chosen.y,age:0});
 }
 
@@ -410,15 +412,19 @@ function collectBunch(){
   notify('氣功蕉皮！六片向外旋轉');sfx('pickup');
 }
 function segmentDistance(point,ax,ay,bx,by){const dx=bx-ax,dy=by-ay,l=dx*dx+dy*dy;const t=l?clamp(((point.x-ax)*dx+(point.y-ay)*dy)/l,0,1):0;return Math.hypot(point.x-ax-t*dx,point.y-ay-t*dy);}
+function crossesPickup(item,path=null){
+  if(!(player.z<=0||special||path?.dashing))return false;
+  const radius=special?.mode==='surf'||path?.surfing?55:35;
+  return (path&&(path.grounded||path.dashing)?segmentDistance(item,path.x,path.y,player.x,player.y):dist(item,player))<radius;
+}
+function collectBunchPickups(path=null){
+  for(const item of pickups)if(!item.collected&&crossesPickup(item,path)){item.collected=true;collectBunch();}
+  pickups=pickups.filter(item=>!item.collected);
+}
 function updateItems(dt,pickupPath=null){
   if(elapsed>=nextPickupAt){spawnBunch();nextPickupAt+=17;}
-  const canCollect=player.z<=0||!!special||!!pickupPath?.dashing;
-  for(const p of pickups){
-    p.age+=dt;
-    const crossed=pickupPath&&(pickupPath.grounded||pickupPath.dashing)?segmentDistance(p,pickupPath.x,pickupPath.y,player.x,player.y)<35:dist(player,p)<35;
-    if(canCollect&&crossed){p.collected=true;collectBunch();}
-  }
-  pickups=pickups.filter(p=>!p.collected&&p.age<18);
+  for(const p of pickups)p.age=(p.age||0)+dt;
+  collectBunchPickups(pickupPath);
   for(const p of orbitPeels){
     p.prevX=p.x;p.prevY=p.y;p.t+=dt;
     const radius=28+100*p.t+70*p.t*p.t;p.angle=p.index*TAU/6+p.t*4;
@@ -463,11 +469,11 @@ function drawBunchVector(p){
 function jump(){if(state!=='playing'||isBossWorldFrozen()||special||player.recoil>0||player.down>0||player.z>1||player.jumpLock>0)return;player.vz=350;player.jumpLock=.12;sfx('jump');}
 function burst(x,y,color,n=12){for(let i=0;i<n;i++){const a=Math.random()*TAU,s=30+Math.random()*150;particles.push({x,y,z:8,vx:Math.cos(a)*s,vy:Math.sin(a)*s,vz:80+Math.random()*80,life:.4+Math.random()*.3,color});}}
 // Slipping never grants damage immunity; the player remains vulnerable while down.
-function slip(actor,angle){actor.down=.7;actor.slipCooldown=1.05;actor.slipX=Math.cos(angle)*480;actor.slipY=Math.sin(angle)*480;if(actor===player){player.recoil=0;player.downPose='slip';player.z=0;player.vz=0;combo=0;comboLife=0;sfx('slip');notify('滑倒！小心敵人');}}
+function slip(actor,angle){actor.down=.7;actor.slipCooldown=1.05;const speed=isLargeBanana(actor)?288:480;actor.slipX=Math.cos(angle)*speed;actor.slipY=Math.sin(angle)*speed;if(actor===player){player.recoil=0;player.downPose='slip';player.z=0;player.vz=0;combo=0;comboLife=0;sfx('slip');notify('滑倒！小心敵人');}}
 function slide(actor,dt){const step=Math.min(dt,actor.down);const decay=Math.exp(-1.5*step),travel=(1-decay)/1.5;actor.x+=actor.slipX*travel;actor.y+=actor.slipY*travel;actor.slipX*=decay;actor.slipY*=decay;actor.down=Math.max(0,actor.down-dt);}
-function hurt(reason){if(state!=='playing'||isBossWorldFrozen()||invincibleMode||player.inv>0||special)return;player.hp--;player.recoil=0;player.stompGuard=0;player.downPose='hurt';player.inv=1.8;if(player.down<=0){player.down=.5;player.slipX=Math.cos(player.face)*170;player.slipY=Math.sin(player.face)*170;}player.z=0;player.vz=0;combo=0;comboLife=0;shake=.22;burst(player.x,player.y,'#fff2b0');sfx('hurt');notify(reason+' −1 ♥');if(player.hp<=0)finish(false);}
+function hurt(reason){if(state!=='playing'||isBossWorldFrozen()||isBossCinematic()||invincibleMode||player.inv>0||special)return;player.hp--;player.recoil=0;player.stompGuard=0;player.downPose='hurt';player.inv=1.8;if(player.down<=0){player.down=.5;player.slipX=Math.cos(player.face)*170;player.slipY=Math.sin(player.face)*170;}player.z=0;player.vz=0;combo=0;comboLife=0;shake=.22;burst(player.x,player.y,'#fff2b0');sfx('hurt');notify(reason+' −1 ♥');if(player.hp<=0)finish(false);}
 function hitEnemy(e,isStomp){
-  if(e.hp<=0||e.hit>0||e.type==='durian')return false;
+  if(isBossCinematic()||e.hp<=0||e.hit>0||e.type==='durian')return false;
   const originalType=e.type;
   e.hp--;e.hit=.24;burst(e.x,e.y,bananaColor(e),8);
   if(isStomp){combo=comboLife>0?combo+1:1;comboLife=1.5;stats.maxCombo=Math.max(stats.maxCombo,combo);stats.stompHits++;const gain=combo===1?20:10;const before=charge;charge=Math.min(100,charge+gain);if(Math.floor(charge/100)>Math.floor(before/100))sfx('charge');texts.push({x:e.x,y:e.y,z:60,text:`+${(gain/100).toFixed(1)} 層`,life:.7});sfx('stomp',1+Math.min(combo,10)*.08);}
@@ -712,9 +718,10 @@ drawBossGround();peels.forEach(drawPeel);pickups.forEach(drawBunch);surfPickups.
 for(const warning of durianWarnings){if(!isInView(warning,90))continue;const p=screen(warning.x,warning.y);ellipse(p.x,p.y,32,23,'#fff1a055','#845335');ctx.fillStyle='#dbb998';ctx.textAlign='center';ctx.font='bold 23px sans-serif';ctx.fillText('!',p.x,p.y+6);ctx.font='bold 10px sans-serif';ctx.fillText('榴槤來襲',p.x,p.y-34);}
 
 if(special){special.trail.forEach((p,i)=>{if(!isInView(p,40,10))return;const s=screen(p.x,p.y,10);ellipse(s.x,s.y,18,10,`rgba(239,248,139,${i/special.trail.length*.4})`);});}
+drawBossRitualBackdrop();
 const actors=enemies.filter(e=>e.hp>0&&isInView(e,260+(e.z||0))).map(e=>({y:e.y,draw:()=>drawEnemyActor(e)}));
 if(boss)actors.push({y:boss.y,draw:()=>drawBossActor(boss)});for(const clone of bossClones)actors.push({y:clone.y,draw:()=>drawBossActor(clone)});if(boss?.cinematic?.kind==='split'&&!boss.cinematic.spawned)for(const target of boss.cinematic.targets)actors.push({y:target.y,draw:()=>drawBossClonePreview(target)});actors.push({y:player.y,draw:drawPlayerActor});actors.sort((a,b)=>a.y-b.y).forEach(a=>a.draw());
-drawBossShots();particles.forEach(p=>{if(!isInView(p,10,p.z))return;const s=screen(p.x,p.y,p.z);ctx.globalAlpha=clamp(p.life*2,0,1);ctx.fillStyle=p.color;ctx.fillRect(s.x,s.y,4,4);});ctx.globalAlpha=1;texts.forEach(t=>{if(!isInView(t,100,t.z))return;const s=screen(t.x,t.y,t.z);ctx.globalAlpha=clamp(t.life*2,0,1);ctx.fillStyle='#fbffe0';ctx.strokeStyle='#665080';ctx.lineWidth=3;ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.strokeText(t.text,s.x,s.y);ctx.fillText(t.text,s.x,s.y);});ctx.globalAlpha=1;const grad=ctx.createRadialGradient(W/2,H/2,H*.25,W/2,H/2,Math.max(W,H)*.7);grad.addColorStop(0,'#39271500');grad.addColorStop(1,'#39271522');ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);ctx.restore();if(state==='playing'||state==='paused'){drawBunchIndicators();drawSurfIndicators();drawSurfFlights();}}
+drawBossRitualHighlights();drawBossShots();particles.forEach(p=>{if(!isInView(p,10,p.z))return;const s=screen(p.x,p.y,p.z);ctx.globalAlpha=clamp(p.life*2,0,1);ctx.fillStyle=p.color;ctx.fillRect(s.x,s.y,4,4);});ctx.globalAlpha=1;texts.forEach(t=>{if(!isInView(t,100,t.z))return;const s=screen(t.x,t.y,t.z);ctx.globalAlpha=clamp(t.life*2,0,1);ctx.fillStyle='#fbffe0';ctx.strokeStyle='#665080';ctx.lineWidth=3;ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.strokeText(t.text,s.x,s.y);ctx.fillText(t.text,s.x,s.y);});ctx.globalAlpha=1;const grad=ctx.createRadialGradient(W/2,H/2,H*.25,W/2,H/2,Math.max(W,H)*.7);grad.addColorStop(0,'#39271500');grad.addColorStop(1,'#39271522');ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);ctx.restore();if(state==='playing'||state==='paused'){drawBunchIndicators();drawSurfIndicators();drawSurfFlights();}}
 // Keep moving bucket membership current so collision response preserves pair order.
 function separateEnemies(){
   const scale=characterScale(),cellSize=96,grid=new Map(),entries=new Map();let checks=0;
@@ -751,7 +758,7 @@ function separateEnemies(){
   }
   return checks;
 }
-function update(dt){if(state!=='playing')return;if(isBossWorldFrozen()){if(isBossEntrance())updateBossEntrance(dt);else updateBossCinematic(dt);return;}const pickupPath={x:player.x,y:player.y,grounded:player.z<=0,dashing:!!special};const oldRate=musicRate();elapsed+=dt;if(!boss&&elapsed>=gameDuration){elapsed=gameDuration;startBossBattle();return;}if(oldRate!==musicRate())updateMusicRate();const enemyDt=dt*gameTempo();player.inv=Math.max(0,player.inv-dt);player.stompGuard=Math.max(0,player.stompGuard-dt);player.jumpLock=Math.max(0,player.jumpLock-dt);player.slipCooldown=Math.max(0,player.slipCooldown-dt);comboLife-=dt;if(comboLife<=0)combo=0;noticeLife-=dt;if(noticeLife<=0)$('notice').textContent='';shake=Math.max(0,shake-dt);
+function update(dt){if(state!=='playing')return;if(isBossWorldFrozen()){if(isBossEntrance())updateBossEntrance(dt);else updateBossCinematic(dt);return;}const pickupPath={x:player.x,y:player.y,grounded:player.z<=0,dashing:!!special,surfing:special?.mode==='surf'};const oldRate=musicRate();elapsed+=dt;if(!boss&&elapsed>=gameDuration){elapsed=gameDuration;startBossBattle();return;}if(oldRate!==musicRate())updateMusicRate();const enemyDt=dt*gameTempo();player.inv=Math.max(0,player.inv-dt);player.stompGuard=Math.max(0,player.stompGuard-dt);player.jumpLock=Math.max(0,player.jumpLock-dt);player.slipCooldown=Math.max(0,player.slipCooldown-dt);comboLife-=dt;if(comboLife<=0)combo=0;noticeLife-=dt;if(noticeLife<=0)$('notice').textContent='';shake=Math.max(0,shake-dt);
 updatePeels(dt);
 let mx=(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+stick.x,my=(keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0)+stick.y;let m=Math.hypot(mx,my);if(m>1){mx/=m;my/=m;}if(m>.1)player.face=Math.atan2(my,mx);
 if(special){
@@ -759,6 +766,7 @@ if(special){
   const dashFromX=player.x,dashFromY=player.y;
   player.x=clamp(player.x+s.dx*s.speed*step,-arenaSize,arenaSize);player.y=clamp(player.y+s.dy*s.speed*step,-arenaSize,arenaSize);player.z=s.mode==='surf'?0:10;player.face=Math.atan2(s.dy,s.dx);
   if(s.mode==='surf')feedSurf(s,dashFromX,dashFromY);
+  collectBunchPickups(pickupPath);collectSurfPickups(pickupPath);
   s.trail.push({x:player.x,y:player.y});if(s.trail.length>24)s.trail.shift();
   if(boss)for(const target of [boss,...bossClones]){
     if(s.hits.has(target)||segmentDistance(target,dashFromX,dashFromY,player.x,player.y)>76*characterScale())continue;
@@ -766,7 +774,7 @@ if(special){
     if(state!=='playing'||isBossWorldFrozen())return;
   }
   for(const e of enemies){
-    if(e.hp<=0||e.carriedBy!==undefined||(s.mode==='surf'?segmentDistance(e,dashFromX,dashFromY,player.x,player.y):dist(player,e))>((isLargeBanana(e)?76:60)*characterScale()))continue;
+    if(isBossCinematic()||e.hp<=0||e.carriedBy!==undefined||(s.mode==='surf'?segmentDistance(e,dashFromX,dashFromY,player.x,player.y):dist(player,e))>((isLargeBanana(e)?76:60)*characterScale()))continue;
     if(s.hits.has(e.id))continue;
     if(e.type!=='durian'&&e.hit>0)continue;
     s.hits.add(e.id);
@@ -786,7 +794,7 @@ else{player.x+=mx*205*dt;player.y+=my*205*dt;const wasZ=player.z;player.vz-=830*
 
 if(player.z<=0){player.z=0;player.vz=0;if(wasZ>0&&comboLife<.9){combo=0;comboLife=0;}}}
 player.x=clamp(player.x,-arenaSize,arenaSize);player.y=clamp(player.y,-arenaSize,arenaSize);
-if(isBossCinematic()){updateHUD();return;}
+if(isBossWorldFrozen()){updateHUD();return;}
 for(const e of enemies){if(e.hp<=0)continue;const oldX=e.x,oldY=e.y,wasRolling=e.knock>0||e.down>0;e.hit=Math.max(0,e.hit-dt);e.slipCooldown=Math.max(0,(e.slipCooldown||0)-dt);if(e.rise>0)e.rise=Math.max(0,e.rise-dt);if(e.carriedBy!==undefined){continue;}else if(e.projectile){updateThrownDurian(e,enemyDt);}else if(e.knock>0){e.knock-=dt;e.x+=e.kx*dt;e.y+=e.ky*dt;}else if(e.down>0){slide(e,dt);}else if(e.type==='charger'){updateCharger(e,dt,gameTempo());}else if(e.type==='thrower'){updateThrower(e,dt,gameTempo());}else{const dx=player.x-e.x,dy=player.y-e.y,d=Math.hypot(dx,dy)||1;const travel=Math.min(d,e.speed*enemyDt);e.x+=dx/d*travel;e.y+=dy/d*travel;}const bound=arenaSize-(isLargeBanana(e)?52:0);e.x=clamp(e.x,-bound,bound);e.y=clamp(e.y,-bound,bound);if(e.type==='durian'&&!e.projectile)advanceDurianRoll(e,oldX,oldY,wasRolling);updateEnemyFacing(e);}
 for(const fruit of enemies){if(fruit.carriedBy===undefined)continue;const owner=enemies.find(e=>e.id===fruit.carriedBy&&e.hp>0);if(owner){fruit.x=owner.x+(owner.facing||1)*48*characterScale();fruit.y=owner.y+8;fruit.z=50;}else{delete fruit.carriedBy;fruit.z=0;}}
 // Grounded actors can be tripped by stationary or fast-moving red peels.
@@ -854,6 +862,6 @@ canvas.addEventListener('pointerdown',()=>{canvas.focus();unlockAudio();});
 window.addEventListener('blur',()=>{keys.clear();if(state==='playing')pause();});document.addEventListener('visibilitychange',()=>{if(document.hidden&&state==='playing')pause();});
 $('jumpTouch').addEventListener('pointerdown',e=>{e.preventDefault();jump();});$('specialTouch').addEventListener('pointerdown',e=>{e.preventDefault();activate();});
 $('surfUse').addEventListener('pointerdown',e=>{e.preventDefault();activateSurf();});
-function moveStick(e){const b=$('stick').getBoundingClientRect(),dx=e.clientX-b.left-b.width/2,dy=e.clientY-b.top-b.height/2,d=Math.hypot(dx,dy),r=35;stick.x=dx/Math.max(r,d);stick.y=dy/Math.max(r,d);$('knob').style.transform=`translate(${stick.x*r}px,${stick.y*r}px)`;}
+function moveStick(e){const b=$('stick').getBoundingClientRect(),dx=e.clientX-b.left-b.width/2,dy=e.clientY-b.top-b.height/2,d=Math.hypot(dx,dy),r=b.width*.3;stick.x=dx/Math.max(r,d);stick.y=dy/Math.max(r,d);$('knob').style.transform=`translate(${stick.x*r}px,${stick.y*r}px)`;}
 $('stick').addEventListener('pointerdown',e=>{e.preventDefault();if(stickPointer!==null)return;stickPointer=e.pointerId;$('stick').setPointerCapture(e.pointerId);moveStick(e);});$('stick').addEventListener('pointermove',e=>{if(e.pointerId===stickPointer)moveStick(e);});function releaseStick(e){if(e.pointerId!==stickPointer)return;stickPointer=null;stick.x=stick.y=0;$('knob').style.transform='';}['pointerup','pointercancel','lostpointercapture'].forEach(event=>$('stick').addEventListener(event,releaseStick));
 function frame(now){const rawDt=Math.max(0,(now-previous)/1000),dt=Math.min(rawDt,.033);previous=now;if(state==='playing')update(isBossWorldFrozen()?rawDt:dt);else if(state==='over')tickEnding(rawDt);render();requestAnimationFrame(frame);}resize();updateHUD();loadGameAssets();requestAnimationFrame(frame);

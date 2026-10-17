@@ -12,8 +12,8 @@ function bossFirePattern(){
 function bossRadius(){return Math.min(W,H/.72)*.34;}
 function isBossEntrance(){return !!boss&&['entrance','entrance-pose','entrance-banner'].includes(boss.phase);}
 function isBossCinematic(){return !!boss&&['quadrants-cinematic','split-cinematic'].includes(boss.phase);}
-function isBossWorldFrozen(){return isBossEntrance()||isBossCinematic();}
-function bossViewportPoint(sx,sy,margin=70){return {x:clamp(player.x+sx-W/2,-arenaSize+margin,arenaSize-margin),y:clamp(player.y+(sy-H*.52)/.72,-arenaSize+margin,arenaSize-margin)};}
+function isBossWorldFrozen(){return isBossEntrance()||boss?.phase==='split-cinematic';}
+function bossViewportPoint(sx,sy,margin=70,view=player){return {x:clamp(view.x+sx-W/2,-arenaSize+margin,arenaSize-margin),y:clamp(view.y+(sy-H*.52)/.72,-arenaSize+margin,arenaSize-margin)};}
 function bossOtherSide(actor=boss,reserved=[]){
   const occupied=[...bossClones,...reserved];
   const p=screen(actor.x,actor.y),xs=p.x<W/2?[.8,.2]:[.2,.8];
@@ -94,26 +94,26 @@ function releaseBossFire(actor=boss){
   const pattern=actor.firePattern=bossFirePattern();actor.fireRows=pattern.rows*pattern.rounds;actor.fireRowIndex=0;releaseBossFireRow(actor);actor.fireClock=bossFireGap(actor);
   actor.phase='fire';actor.time=pattern.rounds*(pattern.rows-1)*pattern.gap+(pattern.rounds-1)*pattern.roundGap+pattern.rest;
 }
-function releaseSummonQuake(origin=boss){
+function releaseSummonQuake(origin=boss,view=player){
   const wave=[];
   for(const x of [.25,.75])for(const y of [.25,.75])for(let i=0;i<6;i++){
-    const a=i*TAU/6,target=bossViewportPoint(W*x+Math.cos(a)*34,H*y+Math.sin(a)*26),dx=target.x-origin.x,dy=target.y-origin.y,d=Math.hypot(dx,dy)||1,start=Math.min(35*characterScale(),d);
+    const a=i*TAU/6,target=bossViewportPoint(W*x+Math.cos(a)*34,H*y+Math.sin(a)*26,70,view),dx=target.x-origin.x,dy=target.y-origin.y,d=Math.hypot(dx,dy)||1,start=Math.min(35*characterScale(),d);
     const peel={id:serial++,x:origin.x+dx/d*start,y:origin.y+dy/d*start,age:.6,summonWave:true,quakeTarget:target,bossWave:{dx:dx/d,dy:dy/d,remaining:Math.max(0,d-start),speed:900}};
     peels.push(peel);wave.push(peel);
   }
   boss.quakeFlash={x:origin.x,y:origin.y,t:0};sfx('bossSlam');shake=.12;return wave;
 }
-function completeSummonQuake(wave){
+function completeSummonQuake(wave,view=player){
   for(const peel of wave){if(!peels.includes(peel))continue;peel.x=peel.quakeTarget.x;peel.y=peel.quakeTarget.y;delete peel.bossWave;delete peel.summonWave;delete peel.quakeTarget;}
-  return planQuadrantRituals();
+  return planQuadrantRituals(view);
 }
-function planQuadrantRituals(){
+function planQuadrantRituals(view=player){
   const groups=[];
   for(let quadrant=0;quadrant<4;quadrant++){
     const right=quadrant%2,bottom=Math.floor(quadrant/2);
-    const candidates=peels.filter(p=>!p.ritual&&!p.bossWave&&!(p.slideTime>0)&&p.age>.5).filter(p=>{const s=screen(p.x,p.y);return s.x>=25&&s.x<=W-25&&s.y>=25&&s.y<=H-25&&(s.x>=W/2?1:0)===right&&(s.y>=H/2?1:0)===bottom;});
+    const candidates=peels.filter(p=>!p.ritual&&!p.bossWave&&!(p.slideTime>0)&&p.age>.5).filter(p=>{const s={x:W/2+p.x-view.x,y:H*.52+(p.y-view.y)*.72};return s.x>=25&&s.x<=W-25&&s.y>=25&&s.y<=H-25&&(s.x>=W/2?1:0)===right&&(s.y>=H/2?1:0)===bottom;});
     if(candidates.length<3)continue;
-    const target=bossViewportPoint(W*(right?.75:.25),H*(bottom?.75:.25));candidates.sort((a,b)=>dist(a,target)-dist(b,target));
+    const target=bossViewportPoint(W*(right?.75:.25),H*(bottom?.75:.25),70,view);candidates.sort((a,b)=>dist(a,target)-dist(b,target));
     const first=candidates[0],second=candidates.slice(1).sort((a,b)=>dist(b,first)-dist(a,first))[0];
     const third=candidates.filter(p=>p!==first&&p!==second).sort((a,b)=>Math.abs((second.x-first.x)*(b.y-first.y)-(second.y-first.y)*(b.x-first.x))-Math.abs((second.x-first.x)*(a.y-first.y)-(second.y-first.y)*(a.x-first.x)))[0];
     const sources=[first,second,third],center={x:sources.reduce((v,p)=>v+p.x,0)/3,y:sources.reduce((v,p)=>v+p.y,0)/3};
@@ -153,21 +153,25 @@ function spawnBossCloneBatch(targets=planBossClones()){
 }
 function startBossCinematic(kind){
   boss.fireRows=0;boss.knock=0;boss.phase=kind==='quadrants'?'quadrants-cinematic':'split-cinematic';boss.time=kind==='quadrants'?6:3;
-  boss.cinematic={kind,t:0,duration:boss.time,from:{x:boss.x,y:boss.y},center:bossViewportPoint(W/2,H/2),groups:[],targets:kind==='split'?planBossClones():[],target:null};
+  boss.cinematic={kind,t:0,duration:boss.time,from:{x:boss.x,y:boss.y},center:bossViewportPoint(W/2,H/2),view:{x:player.x,y:player.y},groups:[],targets:kind==='split'?planBossClones():[],target:null};
+  if(kind==='quadrants'){player.recoil=0;player.down=0;sfx('ritualCharge');}
   bossShots=[];sfx('warning');
 }
 function updateBossCinematic(dt){
   const scene=boss.cinematic;const step=Math.min(dt,scene.duration-scene.t);scene.t+=step;boss.time=Math.max(0,scene.duration-scene.t);bossElapsed+=step;shake=Math.max(0,shake-step);if(boss.quakeFlash)boss.quakeFlash.t+=step;
   if(scene.kind==='quadrants'){
+    boss.hit=Math.max(0,boss.hit-step);
     const travel=clamp(scene.t/.8,0,1);boss.x=scene.from.x+(scene.center.x-scene.from.x)*travel;boss.y=scene.from.y+(scene.center.y-scene.from.y)*travel;
-    boss.z=Math.min(90,Math.max(20,H*.5/characterScale()-210))*clamp((scene.t-.8)/.7,0,1)*(1-clamp((scene.t-5.1)/.9,0,1));
-    if(scene.t>=1&&!scene.wave)scene.wave=releaseSummonQuake(scene.center);
+    const rise=clamp(scene.t/.95,0,1);
+    boss.z=Math.min(90,Math.max(20,H*.5/characterScale()-210))*rise*rise*(3-2*rise)*(1-clamp((scene.t-5.1)/.9,0,1));
+    if(scene.t>=1.6&&!scene.wave)scene.wave=releaseSummonQuake(scene.center,scene.view);
     if(scene.wave)for(const peel of scene.wave)moveBossPeel(peel,step);
-    if(scene.t>=2.2&&!scene.planned){scene.groups=completeSummonQuake(scene.wave);scene.planned=true;}
-    advanceRituals(scene.groups,clamp((scene.t-2.2)/2,0,1));
-    for(const group of scene.groups)if(group.actor)group.actor.rise=Math.max(0,.6-(scene.t-4.2));
+    if(scene.t>=2.5&&!scene.planned){scene.groups=completeSummonQuake(scene.wave,scene.view);scene.planned=true;}
+    advanceRituals(scene.groups,clamp((scene.t-2.5)/2,0,1));
+    if(scene.t>=4.5&&!scene.summoned){scene.summoned=true;sfx('bossCast');}
+    for(const group of scene.groups)if(group.actor)group.actor.rise=Math.max(0,.6-(scene.t-4.5));
   }else{boss.z=Math.sin(Math.PI*scene.t/scene.duration)*35;if(scene.t>=2&&!scene.spawned){spawnBossCloneBatch(scene.targets);scene.spawned=true;sfx('bossCast');}}
-  if(boss.time<=1e-8){boss.z=0;boss.cinematic=null;boss.phase='rest';boss.time=.8;boss.nextClone=bossElapsed+7;resumeBossWorld();}
+  if(boss.time<=1e-8){boss.z=0;boss.cinematic=null;boss.phase='rest';boss.time=.8;boss.nextClone=bossElapsed+7;if(scene.kind==='quadrants'){shake=.08;sfx('bossSlam');}else resumeBossWorld();}
   updateHUD();
 }
 function onBossHealthChanged(){
@@ -182,13 +186,13 @@ function onBossHealthChanged(){
   if(boss.hp===1){startBossCinematic('split');syncMusic();}
 }
 function tryStompBoss(){
-  if(!boss||boss.hp<=0||isBossWorldFrozen())return false;
+  if(!boss||boss.hp<=0||isBossCinematic()||isBossWorldFrozen())return false;
   const targets=[boss,...bossClones].filter(actor=>actor.hit<=0&&actor.phase!=='shield'&&dist(player,actor)<=56*characterScale()).sort((a,b)=>dist(player,a)-dist(player,b));
   const target=targets[0];if(!target)return false;
   return hitBoss(target,true);
 }
 function hitBoss(target,isStomp){
-  if(!boss||boss.hp<=0||isBossWorldFrozen()||(target!==boss&&!bossClones.includes(target))||target.hit>0||target.phase==='shield')return false;
+  if(!boss||boss.hp<=0||isBossCinematic()||isBossWorldFrozen()||(target!==boss&&!bossClones.includes(target))||target.hit>0||target.phase==='shield')return false;
   const a=dist(player,target)>1?Math.atan2(player.y-target.y,player.x-target.x):Math.PI/2;
   const hitX=target.x,hitY=target.y;
   if(isStomp){
@@ -270,8 +274,49 @@ function drawRitualGroups(groups){
     const center=screen(group.center.x,group.center.y);ellipse(center.x,center.y,25+group.t*15,12+group.t*9,'#a3cd7822','#bde199');
   }
 }
+function bossRitualDim(){
+  const scene=boss?.cinematic;
+  return scene?.kind==='quadrants'?.35*Math.min(clamp(scene.t/.7,0,1),clamp((6-scene.t)/.9,0,1)):0;
+}
+function bossRitualLean(time){
+  if(time<1.6)return -.06*clamp(time/.9,0,1);
+  return time<2.2?.18*Math.sin((time-1.6)/.6*Math.PI):0;
+}
+function drawBossRitualBackdrop(){
+  const dim=bossRitualDim();if(dim<=0)return;
+  ctx.save();ctx.fillStyle=`rgba(7,18,16,${dim})`;ctx.fillRect(0,0,W,H);ctx.restore();
+}
+function drawBossRitualAura(){
+  const scene=boss?.cinematic;if(scene?.kind!=='quadrants')return;
+  const scale=characterScale();
+  for(const group of scene.groups)if(!group.done)for(let i=0;i<group.origins.length;i++){
+    const from=group.origins[i],t=(scene.t*2+i*.33)%1,to=group.center,p=screen(from.x+(to.x-from.x)*t,from.y+(to.y-from.y)*t,8);
+    ellipse(p.x,p.y,3*scale,3*scale,'#dbedb8');
+  }
+}
+function drawBossRitualHighlights(){
+  const scene=boss?.cinematic;if(scene?.kind!=='quadrants')return;
+  const scale=characterScale(),time=scene.t;
+  if(time<1.95){
+    const lean=bossRitualLean(time),foot=screen(boss.x,boss.y,(boss.z||0)*scale),x=foot.x+(46*Math.cos(lean)+120*Math.sin(lean))*scale,y=foot.y+(46*Math.sin(lean)-120*Math.cos(lean))*scale;
+    const charge=clamp(time/1.3,0,1),tighten=clamp((time-1.3)/.3,0,1),released=time>=1.6;
+    const radius=(released?24+(time-1.6)*220:12+charge*27-tighten*25)*scale;
+    ctx.save();ctx.globalAlpha=released?clamp(1-(time-1.6)/.35,0,1):.5+charge*.4;
+    const glow=ctx.createRadialGradient(x,y,2,x,y,radius*1.8);glow.addColorStop(0,'#e1efb9dd');glow.addColorStop(.4,'#a6d6a37a');glow.addColorStop(1,'#a6d6a300');ellipse(x,y,radius*1.8,radius*1.8,glow);ellipse(x,y,Math.max(5,radius*.25),Math.max(7,radius*.3),'#e3f0c7');
+    if(!released)for(let i=0;i<6;i++){const angle=i*TAU/6+time*2,distance=(52-charge*24-tighten*18)*scale;ellipse(x+Math.cos(angle)*distance,y+Math.sin(angle)*distance,2.5*scale,2.5*scale,'#d3e9b6');}
+    ctx.restore();
+  }
+  if(scene.summoned&&time<5.15){
+    const progress=clamp((time-4.5)/.65,0,1);
+    for(const group of scene.groups){
+      const p=screen(group.center.x,group.center.y);ctx.save();ctx.globalAlpha=(1-progress)*.8;
+      const glow=ctx.createRadialGradient(p.x,p.y-22*scale,2,p.x,p.y-22*scale,65*scale);glow.addColorStop(0,'#dfedbdcc');glow.addColorStop(1,'#a3d6a000');ellipse(p.x,p.y-22*scale,55*scale,80*scale,glow);ellipse(p.x,p.y,(30+progress*25)*scale,(13+progress*11)*scale,'#d8ebac66','#c5e2a6');ctx.restore();
+    }
+  }
+}
 function drawBossGround(){
   if(!boss)return;
+  drawBossRitualAura();
   if(boss.quakeFlash&&boss.quakeFlash.t<.6){const wave=boss.quakeFlash,p=screen(wave.x,wave.y),progress=wave.t/.6;ctx.save();ctx.globalAlpha=1-progress;ctx.strokeStyle='#d5d694';ctx.lineWidth=3;for(const offset of [0,25]){const radius=35+progress*bossSeaRadius()+offset;ctx.beginPath();ctx.ellipse(p.x,p.y,radius,radius*.72,0,0,TAU);ctx.stroke();}ctx.restore();}
   drawOneBossGround(boss);for(const clone of bossClones)drawOneBossGround(clone);
   drawRitualGroups(boss.rituals);if(boss.cinematic)drawRitualGroups(boss.cinematic.groups);
@@ -350,6 +395,7 @@ function drawBossActor(actor=boss){
   if(actor.isClone)ctx.globalAlpha*=.82;
   if(actor===boss&&boss.phase==='teleport-aim')ctx.globalAlpha*=.35+.65*clamp(boss.time/.3,0,1);
   if(actor.hp<=0){ctx.rotate(.7);ctx.globalAlpha=.3;}else if(actor.hit>0)ctx.globalAlpha=.65+.25*Math.sin(bossElapsed*25);
+  if(actor===boss&&boss.cinematic?.kind==='quadrants')ctx.rotate(bossRitualLean(boss.cinematic.t));
   ctx.drawImage(renderSprite(bossSprite),-width/2,-height+12,width,height);ctx.restore();
   if(['shield-aim','shield'].includes(actor.phase))drawBossShield(p,scale,actor);
   if(actor.phase==='fire-aim')drawBossFireCharge(p,scale,actor);

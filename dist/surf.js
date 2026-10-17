@@ -65,12 +65,13 @@ function feedSurf(s,ax,ay){
 }
 function updateSurfItems(dt,path){
   if(!boss)while(nextSurfAt<gameDuration&&elapsed>=nextSurfAt){spawnSurfPickup();nextSurfAt+=30;}
-  const grounded=player.z<=0||!!special||!!path?.dashing;
   for(const flight of surfFlights)flight.t+=dt;surfFlights=surfFlights.filter(flight=>flight.t<.45);
+  for(const item of surfPickups)item.age+=dt;
+  collectSurfPickups(path);
+}
+function collectSurfPickups(path=null){
   for(const item of surfPickups){
-    item.age+=dt;
-    const distance=path&&(path.grounded||path.dashing)?segmentDistance(item,path.x,path.y,player.x,player.y):dist(item,player);
-    if(surfStock<3&&grounded&&distance<35){surfStock++;item.collected=true;const from=screen(item.x,item.y),button=$('surfUse').getBoundingClientRect(),arena=canvas.getBoundingClientRect();surfFlights.push({x:from.x,y:from.y,toX:button.left-arena.left+button.width/2,toY:button.top-arena.top+button.height/2,t:0});sfx('pickup');notify(`蕉皮滑板 +1 · ${surfStock} / 3`);}
+    if(surfStock<3&&!item.collected&&crossesPickup(item,path)){surfStock++;item.collected=true;const from=screen(item.x,item.y),button=$('surfUse').getBoundingClientRect(),arena=canvas.getBoundingClientRect();surfFlights.push({x:from.x,y:from.y,toX:button.left-arena.left+button.width/2,toY:button.top-arena.top+button.height/2,t:0});sfx('pickup');notify(`蕉皮滑板 +1 · ${surfStock} / 3`);}
   }
   surfPickups=surfPickups.filter(item=>!item.collected);
 }
