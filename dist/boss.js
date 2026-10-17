@@ -1,7 +1,7 @@
 'use strict';
 let boss=null,bossElapsed=0,bossShots=[],bossClones=[];
 const bossMusicBuffers=new Map();
-const bossMaxHp=10,bossFireDodgeHeight=58,bossShieldRadius=112;
+const bossMaxHp=10,bossFireDodgeHeight=58,bossShieldRadius=112,bossFireZ=20;
 function bossFirePattern(){
   if(boss.hp<=6)return {count:7,rows:3,rounds:2,gap:.18,roundGap:.35,aim:1,rest:.4,extra:0};
   if(boss.hp===7)return {count:6,rows:3,rounds:1,gap:.2,roundGap:.35,aim:1,rest:.5,extra:0};
@@ -54,7 +54,7 @@ function beginBossMove(actor=boss){
   else if(actor===boss&&boss.hp<=7&&bossElapsed>=actor.nextTeleport){actor.phase='teleport-aim';actor.time=.3;actor.teleportTarget=bossOtherSide(actor);}
   else{
     const moves=['sea-aim','revive','fire-aim'];actor.phase=moves[actor.move++%moves.length];actor.time=actor.phase==='revive'?3:1;
-    if(actor.phase==='fire-aim')actor.aim=Math.atan2(player.y-actor.y,player.x-actor.x);
+    if(actor.phase==='fire-aim'){const origin=bossFireOrigin(actor);actor.aim=Math.atan2(player.y-origin.y,player.x-origin.x);}
     if(actor.phase==='revive'){
       actor.radius=bossRadius();actor.revivePeels=peels.filter(p=>!p.ritual&&!p.summonWave&&dist(p,actor)<=actor.radius).sort((a,b)=>dist(a,actor)-dist(b,actor)).slice(0,12);actor.summonPoints=[];
     }
@@ -80,8 +80,13 @@ function moveBossPeel(p,dt){
   if(!p.bossWave)return false;
   const wave=p.bossWave,travel=Math.min(wave.remaining,(wave.speed||280)*dt);wave.remaining-=travel;p.x=clamp(p.x+wave.dx*travel,-arenaSize+20,arenaSize-20);p.y=clamp(p.y+wave.dy*travel,-arenaSize+20,arenaSize-20);if(wave.remaining<=0)delete p.bossWave;return true;
 }
+function bossFireOrigin(actor,scale=characterScale()){
+  // Convert the staff orb's screen offset to the projectile's world plane.
+  return {x:actor.x+46*scale,y:actor.y+(bossFireZ-120*scale)/.72};
+}
 function emitBossFire(actor,count){
-  for(let i=0;i<count;i++){const a=actor.aim+(i-(count-1)/2)*Math.min(.22,(Math.PI/2)/Math.max(1,count-1));bossShots.push({x:actor.x,y:actor.y-5,vx:Math.cos(a)*215,vy:Math.sin(a)*215,life:2.6});}sfx('bossCast');
+  const origin=bossFireOrigin(actor);
+  for(let i=0;i<count;i++){const a=actor.aim+(i-(count-1)/2)*Math.min(.22,(Math.PI/2)/Math.max(1,count-1));bossShots.push({...origin,vx:Math.cos(a)*215,vy:Math.sin(a)*215,life:2.6});}sfx('bossCast');
 }
 function releaseBossFireRow(actor=boss){emitBossFire(actor,actor.firePattern.count);actor.fireRows--;actor.fireRowIndex++;}
 function bossFireGap(actor=boss){return actor.fireRowIndex%actor.firePattern.rows===0?actor.firePattern.roundGap:actor.firePattern.gap;}
@@ -194,7 +199,7 @@ function hitBoss(target,isStomp){
   if(target!==boss){bossClones=bossClones.filter(clone=>clone!==target);kills++;if(isStomp)stats.stompKills++;}
   else{
     boss.hit=4;boss.phase='stunned';boss.time=.65;boss.fireRows=0;boss.knock=.4;boss.kx=-Math.cos(a)*260*characterScale();boss.ky=-Math.sin(a)*260*characterScale();
-    if(boss.hp===1&&bossClones.length){
+    if(boss.hp<=2&&bossClones.length){
       const promoted=bossClones.splice(Math.floor(Math.random()*bossClones.length),1)[0];boss.x=promoted.x;boss.y=promoted.y;boss.knock=0;kills++;if(isStomp)stats.stompKills++;boss.nextClone=bossElapsed+7;notify('分身繼承本尊！');
     }else{
       boss.hp--;
@@ -317,7 +322,8 @@ function drawOneBossGround(boss){
   if(boss.phase==='sea-aim'){const radius=bossRadius()*.75;ellipse(p.x,p.y,radius,radius*.72,'#d7be6822','#d7be68');}
 }
 function drawBossFireCharge(p,scale,actor=boss){
-  const progress=clamp(1-actor.time,0,1),x=p.x+46*scale,y=p.y-120*scale,radius=(30+progress*21)*scale;
+  const origin=bossFireOrigin(actor,scale),source=screen(origin.x,origin.y,bossFireZ);
+  const progress=clamp(1-actor.time,0,1),x=source.x,y=source.y,radius=(30+progress*21)*scale;
   ctx.save();
   const glow=ctx.createRadialGradient(x,y,3*scale,x,y,radius*1.5);glow.addColorStop(0,'#edf5b9dd');glow.addColorStop(.35,'#a8d477aa');glow.addColorStop(1,'#8ec56400');
   ellipse(x,y,radius*1.5,radius*1.5,glow);
@@ -345,7 +351,6 @@ function drawBossActor(actor=boss){
   if(actor===boss&&boss.phase==='teleport-aim')ctx.globalAlpha*=.35+.65*clamp(boss.time/.3,0,1);
   if(actor.hp<=0){ctx.rotate(.7);ctx.globalAlpha=.3;}else if(actor.hit>0)ctx.globalAlpha=.65+.25*Math.sin(bossElapsed*25);
   ctx.drawImage(renderSprite(bossSprite),-width/2,-height+12,width,height);ctx.restore();
-  if(actor.isClone){ctx.save();ctx.fillStyle='#bfd8aa';ctx.font='bold 12px sans-serif';ctx.textAlign='center';ctx.fillText('分身',p.x,p.y-196*scale);ctx.restore();}
   if(['shield-aim','shield'].includes(actor.phase))drawBossShield(p,scale,actor);
   if(actor.phase==='fire-aim')drawBossFireCharge(p,scale,actor);
 }
@@ -357,7 +362,7 @@ function drawBossClonePreview(target){
   drawBossActor({...target,isClone:true,hit:0,phase:'preview'});ctx.restore();
 }
 function drawBossShots(){
-  for(const shot of bossShots){if(!isInView(shot,40,20))continue;const p=screen(shot.x,shot.y,20);ctx.save();const glow=ctx.createRadialGradient(p.x,p.y,3,p.x,p.y,25);glow.addColorStop(0,'#f0f5ad');glow.addColorStop(.35,'#b8dc79dd');glow.addColorStop(1,'#8ec56400');ellipse(p.x,p.y,25,25,glow);ellipse(p.x,p.y,9,11,'#d9ed9f');ctx.restore();}
+  for(const shot of bossShots){if(!isInView(shot,40,bossFireZ))continue;const p=screen(shot.x,shot.y,bossFireZ);ctx.save();const glow=ctx.createRadialGradient(p.x,p.y,3,p.x,p.y,25);glow.addColorStop(0,'#f0f5ad');glow.addColorStop(.35,'#b8dc79dd');glow.addColorStop(1,'#8ec56400');ellipse(p.x,p.y,25,25,glow);ellipse(p.x,p.y,9,11,'#d9ed9f');ctx.restore();}
 }
 function updateBossHUD(){
   const banner=boss?.phase==='entrance-banner';$('bossBanner').hidden=!banner;

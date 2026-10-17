@@ -376,6 +376,21 @@ test('Boss resurrection consumes at most twelve actual peels and creates nothing
   run('updateBoss(2.9)');assert.equal(run('enemies.length'),0);run('updateBoss(.11)');assert.equal(run('enemies.length'),12);assert.equal(run('peels.length'),3);assert.ok(run("enemies.every(e=>e.type==='normal'&&e.hp===1)"));
 });
 test('Boss sea launches three outward peel rings which remain when stopped',()=>{run("reset();enemies=[];startBossBattle();peels=[];boss.move=0;beginBossMove();updateBoss(1.01)");assert.equal(run('boss.phase'),'sea');run('updateBoss(.01);updateBoss(.3);updateBoss(.3)');assert.equal(run('peels.length'),36);const initial=run('dist(peels[0],boss)');run('updatePeels(.2)');assert.ok(run('dist(peels[0],boss)')>initial);run('updatePeels(5)');assert.ok(run('peels.every(p=>!p.bossWave)'));assert.equal(run('peels.length'),36);});
+test('Boss and clone ghost fire starts exactly at the staff charge orb on desktop and mobile',()=>{
+  for(const mobile of [false,true]){
+    context.staffMobile=mobile;
+    run("window.matchMedia=()=>({matches:staffMobile});reset();enemies=[];startBossBattle();boss.x=100;boss.y=50;var staffClone=spawnBossClone({x:-200,y:180});bossShots=[]");
+    for(const actor of ['boss','staffClone']){
+      context.staffActorName=actor;
+      run("var staffActor=staffActorName==='boss'?boss:staffClone;staffActor.move=2;staffActor.nextShield=Infinity;beginBossMove(staffActor);var staffPoint=bossFireOrigin(staffActor);var staffScreen=screen(staffPoint.x,staffPoint.y,bossFireZ);var staffFoot=screen(staffActor.x,staffActor.y);bossShots=[];emitBossFire(staffActor,3)");
+      assert.ok(run('Math.abs(staffScreen.x-staffFoot.x-46*characterScale())<1e-8'));
+      assert.ok(run('Math.abs(staffScreen.y-staffFoot.y+120*characterScale())<1e-8'));
+      assert.ok(run('bossShots.every(shot=>shot.x===staffPoint.x&&shot.y===staffPoint.y)'));
+      assert.ok(run('Math.abs(Math.atan2(bossShots[1].vy,bossShots[1].vx)-Math.atan2(player.y-staffPoint.y,player.x-staffPoint.x))<1e-8'));
+    }
+  }
+  run('delete window.matchMedia');
+});
 test('Boss fan fire uses a locked direction and hurts players below the jump apex',()=>{run("reset();enemies=[];startBossBattle();boss.move=2;beginBossMove();var lockedBossAim=boss.aim;player.inv=99;updateBoss(1.01)");assert.equal(run('bossShots.length'),3);assert.ok(Math.abs(run('Math.atan2(bossShots[1].vy,bossShots[1].vx)')-run('lockedBossAim'))<1e-8);run('player.inv=0;player.z=40;bossShots=[{x:player.x-40,y:player.y,vx:200,vy:0,life:2}];updateBoss(.2)');assert.equal(run('player.hp'),4);assert.equal(run('bossShots.length'),0);});
 test('Ghost fire passes under the jump apex but still hits early and late jump heights',()=>{
   for(const height of [0,20,40,57,58,65,80]){
@@ -466,6 +481,16 @@ test('Stomping the original promotes a random surviving clone and keeps the last
   run("reset();enemies=[];startBossBattle();boss.hp=1;boss.phase='rest';boss.x=0;boss.y=0;spawnBossClone({x:300,y:0});spawnBossClone({x:-300,y:0});boss.hit=0;player.x=0;player.y=0;tryStompBoss()");assert.equal(run('boss.hp'),1);assert.equal(run('bossClones.length'),1);assert.ok(run('Math.abs(boss.x)')===300);assert.equal(run('state'),'playing');
   run("bossClones[0].hit=0;player.x=bossClones[0].x;player.y=bossClones[0].y;tryStompBoss();boss.hit=0;boss.phase='rest';player.x=boss.x;player.y=boss.y;tryStompBoss()");assert.equal(run('state'),'over');assert.equal(run('boss.hp'),0);
 });
+test('At two HP a stomp or ultimate transfers the original role without losing shared HP',()=>{
+  for(const stomp of [true,false]){
+    context.inheritanceStomp=stomp;
+    run("reset();enemies=[];startBossBattle();boss.hp=2;boss.phase='rest';boss.x=0;boss.y=0;boss.hit=0;spawnBossClone({x:300,y:0});spawnBossClone({x:-300,y:0});player.x=0;player.y=0;hitBoss(boss,inheritanceStomp)");
+    assert.equal(run('boss.hp'),2);assert.equal(run('bossClones.length'),1);assert.equal(run('Math.abs(boss.x)'),300);assert.equal(run('boss.hit'),4);assert.equal(run('state'),'playing');
+    run('bossClones[0].hit=0;hitBoss(bossClones[0],inheritanceStomp)');assert.equal(run('bossClones.length'),0);assert.equal(run('boss.hp'),2);
+    run("boss.hit=0;boss.phase='rest';hitBoss(boss,inheritanceStomp)");assert.equal(run('boss.hp'),1);assert.equal(run('isBossCinematic()'),true);
+    run('updateBossCinematic(3)');assert.equal(run('bossClones.length'),2);
+  }
+});
 test('Two HP summons one clone, one HP summons two, and only the original can summon',()=>{
   run("reset();enemies=[];startBossBattle();boss.hp=2;boss.phase='rest';onBossHealthChanged();player.inv=99;beginBossMove();updateBoss(1.01)");assert.equal(run('bossClones.length'),1);assert.ok(run('boss.nextClone')>run('bossElapsed'));
   run("boss.hp=1;boss.nextClone=0;beginBossMove();updateBoss(1.01)");assert.equal(run('bossClones.length'),3);
@@ -477,7 +502,7 @@ test('One HP cinematic respects the four-body cap with existing clones',()=>{
 });
 test('Clones cast the same six rows of ghost fire as the original',()=>{
   run("reset();enemies=[];startBossBattle();boss.phase='rest';boss.hp=2;bossShots=[];var caster=spawnBossClone({x:500,y:300});caster.move=2;caster.nextShield=Infinity;beginBossMove(caster)");assert.equal(run('caster.phase'),'fire-aim');assert.equal(run('caster.time'),1);
-  run('updateBossClones(1);for(let i=0;i<100;i++)updateBossClones(.015)');assert.equal(run('bossShots.length'),42);assert.ok(run('bossShots.every(s=>s.x===500&&s.y===295)'));
+  run('updateBossClones(1);for(let i=0;i<100;i++)updateBossClones(.015)');assert.equal(run('bossShots.length'),42);assert.ok(run('bossShots.every(s=>Math.abs(s.x-546)<1e-8&&Math.abs(s.y-(300+(bossFireZ-120)/.72))<1e-8)'));
 });
 test('Clones release all three peel sea rings around their own location',()=>{
   run("bossShots=[];peels=[];caster.phase='rest';caster.time=0;caster.move=0;caster.nextShield=Infinity;updateBossClones(.01);updateBossClones(1);for(let i=0;i<16;i++)updateBossClones(.05)");assert.equal(run('peels.length'),36);assert.ok(run('peels.every(p=>Math.abs(dist(p,caster)-40*characterScale())<1e-7)'));
