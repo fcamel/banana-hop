@@ -1,6 +1,6 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const elements=new Map();const element=id=>{if(!elements.has(id))elements.set(id,{style:{},hidden:false,classList:{add(){},remove(){}},textContent:'',innerHTML:'',addEventListener(){},setAttribute(){},focus(){},getBoundingClientRect:()=>({width:1000,height:650,left:0,top:0}),setPointerCapture(){}});return elements.get(id);};
-const context={console,Math,Set,setTimeout,clearTimeout,Image:class{constructor(){this.complete=true;this.naturalWidth=64;this.naturalHeight=64;}decode(){return Promise.resolve();}},devicePixelRatio:1,document:{getElementById:element,addEventListener(){},createElement:()=>({getContext:()=>({drawImage(){}})})},window:{addEventListener(){}},ResizeObserver:class{observe(){}},requestAnimationFrame(){}};element('game').getContext=()=>({setTransform(){}});vm.createContext(context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/boss.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/surf.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/game.js','utf8'),context);const run=s=>vm.runInContext(s,context);
+const context={console,Math,Set,setTimeout,clearTimeout,Image:class{constructor(){this.complete=true;this.naturalWidth=64;this.naturalHeight=64;}decode(){return Promise.resolve();}},devicePixelRatio:1,document:{getElementById:element,addEventListener(){},createElement:()=>({getContext:()=>({drawImage(){},createRadialGradient(){return {addColorStop(){}};},beginPath(){},ellipse(){},fill(){}})})},window:{addEventListener(){}},ResizeObserver:class{observe(){}},requestAnimationFrame(){}};element('game').getContext=()=>({setTransform(){}});vm.createContext(context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/boss.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/surf.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/game.js','utf8'),context);const run=s=>vm.runInContext(s,context);
 function test(name,body){body();console.log('PASS',name);}
 (async()=>{
 await run('loadGameAssets()');
@@ -306,6 +306,41 @@ test('All survival tempos and boss arrangements are ready before play and switch
   `);
   assert.deepEqual(Array.from(run('cachedTracks.map(track=>track.duration)')),[30,25,20,15]);assert.equal(run('cachedBossTrack.duration'),30);assert.equal(run('cachedBossFinal===repeatedFinal'),true);
 });
+test('Grid indices update by flooring each axis, including negative cell boundaries',()=>{
+  run('var cellActor={x:-.1,y:96};locateCollisionCell(cellActor)');assert.equal(run('cellActor.gridX'),-1);assert.equal(run('cellActor.gridY'),1);
+  run('cellActor.x=96;cellActor.y=-96.1;locateCollisionCell(cellActor)');assert.equal(run('cellActor.gridX'),1);assert.equal(run('cellActor.gridY'),-2);
+});
+test('Peel grids preserve original hit order across neighboring cells and consumed peels',()=>{
+  run("reset();peels=[{id:1,x:110,y:0,age:1},{id:2,x:90,y:0,age:1}];var localPeelGrid=buildPeelGrid(),localPeelActor={x:95,y:0,type:'normal'}");assert.equal(run('touchingPeel(localPeelActor,localPeelGrid).id'),1);
+  run('localPeelGrid.consumed.add(peels[0])');assert.equal(run('touchingPeel(localPeelActor,localPeelGrid).id'),2);
+});
+test('A swept peel crossing many cells is found once in the actor neighborhood',()=>{
+  run("peels=[{id:3,x:450,y:450,prevX:-450,prevY:-450,age:1,red:true}];var sweepGrid=buildPeelGrid();var sweptGridHit=touchingPeel({x:0,y:0,type:'normal'},sweepGrid)");assert.equal(run('sweptGridHit.id'),3);assert.equal(run('sweepGrid.checks'),1);
+});
+test('Queries remain correct when another peel index is built between searches',()=>{
+  run("peels=[{x:0,y:0,age:1}];var firstIndex=buildPeelGrid();touchingPeel({x:0,y:0},firstIndex);var secondIndex=buildPeelGrid();touchingPeel({x:0,y:0},secondIndex)");assert.ok(run('touchingPeel({x:0,y:0},firstIndex)'));
+});
+test('Peel grid hits match linear swept collision over randomized desktop and mobile layouts',()=>{
+  run(`var linearPeelHit=actor=>peels.find(p=>{
+    if(p.ritual||p.summonWave||p.age<=.5)return false;
+    const ax=p.prevX??p.x,ay=p.prevY??p.y,dx=p.x-ax,dy=p.y-ay,l=dx*dx+dy*dy,t=l?clamp(((actor.x-ax)*dx+(actor.y-ay)*dy)/l,0,1):0;
+    return Math.hypot(actor.x-ax-t*dx,actor.y-ay-t*dy)<16+10*characterScale()+(p.red||p.large?16:0)+(isLargeBanana(actor)?16*characterScale():0);
+  });`);
+  for(const mobile of [false,true]){context.peelMobile=mobile;run(`window.matchMedia=()=>({matches:peelMobile});var peelSeed=8431;function peelRandom(){peelSeed=(peelSeed*1664525+1013904223)>>>0;return peelSeed/4294967296;}
+    for(let layout=0;layout<20;layout++){
+      peels=Array.from({length:300},(_,i)=>{const x=(peelRandom()-.5)*2500,y=(peelRandom()-.5)*2500;return {id:i,x,y,prevX:x+(peelRandom()-.5)*700,prevY:y+(peelRandom()-.5)*700,age:i%13===0?.1:1,ritual:i%17===0,summonWave:i%19===0,red:i%5===0,large:i%7===0};});
+      const index=buildPeelGrid();for(let i=0;i<80;i++){const actor={x:(peelRandom()-.5)*2500,y:(peelRandom()-.5)*2500,type:i%3===0?'charger':'normal'};if(touchingPeel(actor,index)!==linearPeelHit(actor))throw Error('Peel grid mismatch');}
+    }
+  `);}
+  run('delete window.matchMedia');
+});
+test('Distributed peel queries avoid scanning the whole field for every enemy',()=>{
+  run("peels=Array.from({length:500},(_,i)=>({x:(i%25-12)*100,y:(Math.floor(i/25)-10)*100,age:1}));var distributedIndex=buildPeelGrid();for(let i=0;i<100;i++)touchingPeel({x:(i%10-5)*180,y:(Math.floor(i/10)-5)*180,type:'normal'},distributedIndex)");assert.ok(run('distributedIndex.checks')<2000);
+});
+test('Ghost fire reuses a DPR-2 glow sprite without creating gradients during drawing',()=>{
+  assert.equal(run('bossFireSprite.width'),100);assert.equal(run('bossFireSprite.height'),100);
+  run("reset();bossShots=[{x:0,y:0},{x:10,y:10},{x:2000,y:2000}];var cachedFireSprite=bossFireSprite,fireDraws=0,savedFireDraw=ctx.drawImage;ctx.drawImage=()=>fireDraws++;drawBossShots();ctx.drawImage=savedFireDraw");assert.equal(run('fireDraws'),2);assert.equal(run('bossFireSprite===cachedFireSprite'),true);
+});
 test('Spatial separation matches the previous all-pairs response for dense, sparse and boundary layouts',()=>{
   run("var referenceSeparation=function(){for(let i=0;i<enemies.length;i++)for(let j=i+1;j<enemies.length;j++){const a=enemies[i],b=enemies[j];if(a.hp<=0||b.hp<=0||a.carriedBy!==undefined||b.carriedBy!==undefined||a.projectile||b.projectile)continue;const dx=a.x-b.x,dy=a.y-b.y,d=Math.hypot(dx,dy);const separation=(32+(isLargeBanana(a)?16:0)+(isLargeBanana(b)?16:0))*characterScale();if(d>0&&d<separation){const aRam=a.type==='charger'&&a.phase==='dash'&&b.type!=='durian',bRam=b.type==='charger'&&b.phase==='dash'&&a.type!=='durian';const push=separation-d;if(aRam&&!bRam){b.x-=dx/d*push;b.y-=dy/d*push;}else if(bRam&&!aRam){a.x+=dx/d*push;a.y+=dy/d*push;}else{a.x+=dx/d*push*.5;a.y+=dy/d*push*.5;b.x-=dx/d*push*.5;b.y-=dy/d*push*.5;}}}};");
   for(const mobile of [false,true]){
@@ -435,6 +470,18 @@ test('Low-health boss always charges for a full second before releasing its firs
   assert.equal(run('boss.phase'),'fire-aim');assert.equal(run('bossShots.length'),0);run('updateBoss(.02)');assert.equal(run('boss.phase'),'fire');assert.equal(run('bossShots.length'),7);
 });
 test('Boss battle disables natural enemy spawns and has no countdown limit',()=>{run("reset();enemies=[];startBossBattle();boss.phase='rest';boss.time=999;boss.x=800;boss.y=800;player.inv=999;nextPickupAt=999;elapsed=200;spawnClock=0;nextDurianAt=0;nextChargerAt=0;nextThrowerAt=0;update(.1)");assert.equal(run('state'),'playing');assert.equal(run('enemies.length'),0);assert.equal(element('finalCountdown').hidden,true);assert.equal(element('gameClock').hidden,true);assert.equal(run('boss.hp'),10);});
+test('Debug five-HP entry skips the entrance and immediately plays the half-health ritual',()=>{
+  run("debugUnlocked=true;$('gameMode').value='survival';$('debugStart').value='boss-5';reset()");assert.equal(run('boss.hp'),5);assert.equal(run('boss.phase'),'quadrants-cinematic');assert.equal(run('boss.time'),6);assert.equal(run('elapsed'),120);assert.equal(run('enemies.length'),0);assert.ok(run('peels.length')>=12);assert.ok(Number.isFinite(run('boss.nextShield')));assert.ok(Number.isFinite(run('boss.nextTeleport')));assert.equal(run('isBossWorldFrozen()'),false);
+  run('updateBossCinematic(6)');assert.equal(run("enemies.filter(e=>e.type==='charger').length"),4);
+});
+test('Debug two-HP entry starts single-clone summoning and supports original inheritance',()=>{
+  run("debugUnlocked=true;$('debugStart').value='boss-2';reset()");assert.equal(run('boss.hp'),2);assert.equal(run('boss.phase'),'clone-aim');assert.equal(run('isBossEntrance()'),false);assert.equal(run("enemies.filter(e=>e.type==='thrower').length"),2);assert.ok(run('boss.stageSeen.has(5)'));
+  run('updateBoss(1.01)');assert.equal(run('bossClones.length'),1);run('boss.hit=0;player.x=boss.x;player.y=boss.y;tryStompBoss()');assert.equal(run('boss.hp'),2);assert.equal(run('bossClones.length'),0);
+});
+test('Boss health shortcuts require the unlocked debug menu',()=>{
+  for(const shortcut of ['boss-5','boss-2']){context.bossShortcut=shortcut;run("debugUnlocked=false;$('gameMode').value='survival';$('debugStart').value=bossShortcut;reset()");assert.equal(run('boss'),null);assert.equal(run('elapsed'),0);}
+  run("$('debugStart').value='120'");
+});
 test('Debug menu can enter the boss battle with peels and a fresh ten-banana health bar',()=>{run("debugUnlocked=true;$('debugStart').value='boss';reset()");assert.equal(run('elapsed'),120);assert.equal(run('boss.hp'),10);assert.equal(run('enemies.length'),7);assert.equal(run('boss.phase'),'entrance');assert.ok(run('peels.length')>=8);assert.equal(element('bossHud').hidden,false);assert.equal((element('bossBananas').innerHTML.match(/class="health-banana/g)||[]).length,10);run("debugUnlocked=false;$('debugStart').value='120';reset()");assert.equal(run('boss'),null);assert.equal(element('bossHud').hidden,true);assert.equal(element('gameClock').hidden,false);});
 test('Ghost fire strengthens at every early HP threshold and caps at three rows in two rounds',()=>{
   for(const [hp,count,rows,rounds] of [[10,3,1,1],[9,4,1,1],[8,5,2,1],[7,6,3,1],[6,7,3,2],[1,7,3,2]]){

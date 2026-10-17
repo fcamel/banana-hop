@@ -42,6 +42,7 @@ function prepareRenderSprites(){
     }
     renderSprites.set(spec.image,frames);
   }
+  prepareBossFireSprite();
 }
 function renderSprite(image,frame=0,variant=1){return renderSprites.get(image)?.get(`${frame}:${variant}`)||image;}
 function isInView(point,margin=100,z=0){
@@ -226,7 +227,7 @@ function updateHUD(){updateBossHUD();const t=Math.max(0,Math.ceil(gameDuration-e
   $('hearts').innerHTML=Array.from({length:5},(_,i)=>`<span class="health-banana ${i<player.hp?'filled':'empty'}" aria-hidden="true"><svg viewBox="0 0 34 32"><path d="M7 3C1 14 7 31 23 29C31 28 34 19 32 11C26 21 15 17 13 4Z"/><path class="banana-seam" d="M8 8C7 21 20 28 29 20"/><path class="banana-tip" d="M7 2L13 3L13 7L7 6Z"/></svg></span>`).join('');
   $('hearts').setAttribute('aria-label',`生命 ${player.hp} / 5`);if($('hearts').dataset)$('hearts').dataset.hp=String(player.hp);
 }$('kills').textContent=String(kills).padStart(3,'0');$('bar1').style.width=`${Math.min(charge,100)}%`;$('chargeMeter').setAttribute('aria-valuenow',String(Math.round(charge)));if(charge>=100)$('chargeMeter').classList.add('ready');else $('chargeMeter').classList.remove('ready');$('specialTouch').disabled=charge<100||!!special;updateSurfHUD();$('combo').textContent=combo>1&&comboLife>0?`${combo} 連踩`:'';}
-function reset(){if(!assetsReady)return;boss=null;bossElapsed=0;bossShots=[];bossClones=[];$('overlayText').hidden=false;invincibleMode=debugUnlocked&&!!$('debugInvincible').checked;$('overlay').classList.remove('victory');$('debugOptions').hidden=true;$('modeOptions').hidden=true;$('overlay').classList.remove('intro-screen');stats=freshStats();$('resultStats').hidden=true;lastSfx.clear();unlockAudio();sfx('start');nextDurianAt=10;durianWarnings=[];nextChargerAt=20;nextThrowerAt=30;pickups=[];orbitPeels=[];nextPickupAt=17;nextBunchSide=0;endElapsed=0;$('overlay').classList.remove('ending');$('arena')?.classList.remove('ended');$('endWipe').hidden=true;$('start').disabled=false;player=newPlayer();enemies=[];peels=[];particles=[];texts=[];special=null;elapsed=debugUnlocked?[62,32,12].includes(Number($('debugStart').value))?gameDuration-Number($('debugStart').value):0:0;if(elapsed>0){nextDurianAt=elapsed+2;nextChargerAt=elapsed+2;nextThrowerAt=elapsed+3;nextPickupAt=elapsed+2;}resetSurf();spawnClock=.4/.75;charge=0;kills=0;combo=0;comboLife=0;noticeLife=0;keys.clear();stick.x=stick.y=0;state='playing';syncMusic();$('overlay').hidden=true;$('pause').textContent='Ⅱ';$('arena')?.classList.add('playing');if(characterScale()<1){document.body?.classList.add('game-active');window.scrollTo?.(0,0);resize();}for(let i=0;i<7;i++)spawn(180+Math.random()*180);if($('gameMode').value==='boss'||(debugUnlocked&&$('debugStart').value==='boss')){elapsed=120;nextPickupAt=122;startBossBattle(true);}updateHUD();canvas.focus();notify(boss?'':characterScale()<1?'左側移動 · 右側跳踩／衝刺 · 撐過 120 秒':'SPACE 跳踩 · J 衝刺 · 撐過 120 秒');}
+function reset(){if(!assetsReady)return;boss=null;bossElapsed=0;bossShots=[];bossClones=[];$('overlayText').hidden=false;invincibleMode=debugUnlocked&&!!$('debugInvincible').checked;$('overlay').classList.remove('victory');$('debugOptions').hidden=true;$('modeOptions').hidden=true;$('overlay').classList.remove('intro-screen');stats=freshStats();$('resultStats').hidden=true;lastSfx.clear();unlockAudio();sfx('start');nextDurianAt=10;durianWarnings=[];nextChargerAt=20;nextThrowerAt=30;pickups=[];orbitPeels=[];nextPickupAt=17;nextBunchSide=0;endElapsed=0;$('overlay').classList.remove('ending');$('arena')?.classList.remove('ended');$('endWipe').hidden=true;$('start').disabled=false;player=newPlayer();enemies=[];peels=[];particles=[];texts=[];special=null;elapsed=debugUnlocked?[62,32,12].includes(Number($('debugStart').value))?gameDuration-Number($('debugStart').value):0:0;if(elapsed>0){nextDurianAt=elapsed+2;nextChargerAt=elapsed+2;nextThrowerAt=elapsed+3;nextPickupAt=elapsed+2;}resetSurf();spawnClock=.4/.75;charge=0;kills=0;combo=0;comboLife=0;noticeLife=0;keys.clear();stick.x=stick.y=0;state='playing';syncMusic();$('overlay').hidden=true;$('pause').textContent='Ⅱ';$('arena')?.classList.add('playing');if(characterScale()<1){document.body?.classList.add('game-active');window.scrollTo?.(0,0);resize();}for(let i=0;i<7;i++)spawn(180+Math.random()*180);const debugBossHp=debugUnlocked?({'boss-5':5,'boss-2':2}[$('debugStart').value]):undefined;if($('gameMode').value==='boss'||(debugUnlocked&&$('debugStart').value==='boss')||debugBossHp){elapsed=120;nextPickupAt=122;startBossBattle(true);if(debugBossHp)prepareDebugBossStage(debugBossHp);}updateHUD();canvas.focus();notify(boss?'':characterScale()<1?'左側移動 · 右側跳踩／衝刺 · 撐過 120 秒':'SPACE 跳踩 · J 衝刺 · 撐過 120 秒');}
 function gameTempo(time=elapsed){return time>=90?1.5:1;}
 function smallSpawnInterval(time=elapsed){return Math.max(.18,.8-time*.005)/.75;}
 function isLargeBanana(e){return e.type==='charger'||e.type==='thrower';}
@@ -370,13 +371,46 @@ function updatePeels(dt){
     else if(p.slideTime>0){const step=Math.min(dt,p.slideTime),decay=Math.exp(-1.5*step),travel=(1-decay)/1.5;p.x=clamp(p.x+p.vx*travel,-arenaSize,arenaSize);p.y=clamp(p.y+p.vy*travel,-arenaSize,arenaSize);p.vx*=decay;p.vy*=decay;p.slideTime=Math.max(0,p.slideTime-dt);}
   }
 }
-// Swept contact catches fast peels even when they cross a target between frames.
-function touchingPeel(actor){return peels.find(p=>{
-  if(p.ritual||p.summonWave||p.age<=.5)return false;
-  const ax=p.prevX??p.x,ay=p.prevY??p.y,dx=p.x-ax,dy=p.y-ay,length=dx*dx+dy*dy;
-  const t=length?clamp(((actor.x-ax)*dx+(actor.y-ay)*dy)/length,0,1):0;
-  return Math.hypot(actor.x-(ax+t*dx),actor.y-(ay+t*dy))<16+10*characterScale()+(p.red||p.large?16:0)+(isLargeBanana(actor)?16*characterScale():0);
-});}
+// 96-unit cells exceed the largest peel contact radius (58 units).
+const collisionCellSize=96;
+let peelGridQuerySerial=0;
+function collisionGridKey(x,y){return (x+32768)*65536+y+32768;}
+function locateCollisionCell(actor){
+  actor.gridX=Math.floor(actor.x/collisionCellSize);actor.gridY=Math.floor(actor.y/collisionCellSize);
+  actor.gridIndex=collisionGridKey(actor.gridX,actor.gridY);return actor.gridIndex;
+}
+function buildPeelGrid(){
+  const grid={buckets:new Map(),consumed:new Set(),query:0,checks:0};
+  for(let order=0;order<peels.length;order++){
+    const p=peels[order];locateCollisionCell(p);p.peelGridOrder=order;p.peelGridQuery=0;
+    if(p.ritual||p.summonWave||p.age<=.5)continue;
+    const ax=p.prevX??p.x,ay=p.prevY??p.y;
+    // Register every cell spanned by the swept path, not only the end position.
+    const left=Math.floor(Math.min(ax,p.x)/collisionCellSize),right=Math.floor(Math.max(ax,p.x)/collisionCellSize);
+    const top=Math.floor(Math.min(ay,p.y)/collisionCellSize),bottom=Math.floor(Math.max(ay,p.y)/collisionCellSize);
+    for(let x=left;x<=right;x++)for(let y=top;y<=bottom;y++){
+      const key=collisionGridKey(x,y);let bucket=grid.buckets.get(key);
+      if(!bucket){bucket=[];grid.buckets.set(key,bucket);}bucket.push(p);
+    }
+  }
+  return grid;
+}
+function touchingPeel(actor,grid=buildPeelGrid()){
+  locateCollisionCell(actor);const query=++peelGridQuerySerial,scale=characterScale();grid.query++;let first;
+  for(let x=actor.gridX-1;x<=actor.gridX+1;x++)for(let y=actor.gridY-1;y<=actor.gridY+1;y++){
+    const bucket=grid.buckets.get(collisionGridKey(x,y));if(!bucket)continue;
+    for(const p of bucket){
+      if(p.peelGridQuery===query)continue;p.peelGridQuery=query;
+      if(grid.consumed.has(p)||p.ritual||p.summonWave||p.age<=.5||(first&&p.peelGridOrder>=first.peelGridOrder))continue;
+      grid.checks++;
+      const ax=p.prevX??p.x,ay=p.prevY??p.y,dx=p.x-ax,dy=p.y-ay,length=dx*dx+dy*dy;
+      const t=length?clamp(((actor.x-ax)*dx+(actor.y-ay)*dy)/length,0,1):0;
+      const gapX=actor.x-ax-t*dx,gapY=actor.y-ay-t*dy,radius=16+10*scale+(p.red||p.large?16:0)+(isLargeBanana(actor)?16*scale:0);
+      if(gapX*gapX+gapY*gapY<radius*radius)first=p;
+    }
+  }
+  return first;
+}
 
 function spawnBunch(){
   // Prefer unoccupied sides, resolving ties in left/right/top/bottom order.
@@ -724,36 +758,41 @@ if(boss)actors.push({y:boss.y,draw:()=>drawBossActor(boss)});for(const clone of 
 drawBossRitualHighlights();drawBossShots();particles.forEach(p=>{if(!isInView(p,10,p.z))return;const s=screen(p.x,p.y,p.z);ctx.globalAlpha=clamp(p.life*2,0,1);ctx.fillStyle=p.color;ctx.fillRect(s.x,s.y,4,4);});ctx.globalAlpha=1;texts.forEach(t=>{if(!isInView(t,100,t.z))return;const s=screen(t.x,t.y,t.z);ctx.globalAlpha=clamp(t.life*2,0,1);ctx.fillStyle='#fbffe0';ctx.strokeStyle='#665080';ctx.lineWidth=3;ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.strokeText(t.text,s.x,s.y);ctx.fillText(t.text,s.x,s.y);});ctx.globalAlpha=1;const grad=ctx.createRadialGradient(W/2,H/2,H*.25,W/2,H/2,Math.max(W,H)*.7);grad.addColorStop(0,'#39271500');grad.addColorStop(1,'#39271522');ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);ctx.restore();if(state==='playing'||state==='paused'){drawBunchIndicators();drawSurfIndicators();drawSurfFlights();}}
 // Keep moving bucket membership current so collision response preserves pair order.
 function separateEnemies(){
-  const scale=characterScale(),cellSize=96,grid=new Map(),entries=new Map();let checks=0;
-  const keyFor=e=>`${Math.floor(e.x/cellSize)},${Math.floor(e.y/cellSize)}`;
+  const scale=characterScale(),grid=new Map(),entries=new Array(enemies.length),marks=new Uint32Array(enemies.length),heap=[];let checks=0,stamp=0;
   function relocate(index){
-    const entry=entries.get(index),key=keyFor(entry.actor);if(key===entry.key)return false;
-    if(entry.key!==undefined){const bucket=grid.get(entry.key);bucket.delete(index);if(!bucket.size)grid.delete(entry.key);}
+    const entry=entries[index],previous=entry.key,key=locateCollisionCell(entry.actor);if(key===previous)return false;
+    if(previous!==undefined){const bucket=grid.get(previous);bucket.delete(index);if(!bucket.size)grid.delete(previous);}
     let bucket=grid.get(key);if(!bucket){bucket=new Set();grid.set(key,bucket);}bucket.add(index);entry.key=key;return true;
   }
+  function enqueue(index){
+    if(marks[index]===stamp)return;marks[index]=stamp;
+    let pos=heap.length;heap.push(index);
+    while(pos>0){const parent=(pos-1)>>1;if(heap[parent]<=index)break;heap[pos]=heap[parent];pos=parent;}heap[pos]=index;
+  }
+  function next(){
+    const result=heap[0],last=heap.pop();
+    if(heap.length){let pos=0;while(pos*2+1<heap.length){let child=pos*2+1;if(child+1<heap.length&&heap[child+1]<heap[child])child++;if(heap[child]>=last)break;heap[pos]=heap[child];pos=child;}heap[pos]=last;}
+    return result;
+  }
   function nearby(actor,after){
-    const cx=Math.floor(actor.x/cellSize),cy=Math.floor(actor.y/cellSize),found=[];
-    for(let x=cx-1;x<=cx+1;x++)for(let y=cy-1;y<=cy+1;y++)for(const index of grid.get(`${x},${y}`)||[]){if(index>after)found.push(index);}
-    return found;
+    for(let x=actor.gridX-1;x<=actor.gridX+1;x++)for(let y=actor.gridY-1;y<=actor.gridY+1;y++){
+      const bucket=grid.get(collisionGridKey(x,y));if(bucket)for(const index of bucket)if(index>after)enqueue(index);
+    }
   }
   for(let i=0;i<enemies.length;i++){
     const actor=enemies[i];if(actor.hp<=0||actor.carriedBy!==undefined||actor.projectile)continue;
-    entries.set(i,{actor,radius:(isLargeBanana(actor)?32:16)*scale});relocate(i);
+    entries[i]={actor,radius:(isLargeBanana(actor)?32:16)*scale};relocate(i);
   }
-  for(const [i,entry] of entries){
-    const a=entry.actor;let candidates=nearby(a,i).sort((a,b)=>a-b);
-    for(let cursor=0;cursor<candidates.length;cursor++){
-      const j=candidates[cursor],other=entries.get(j),b=other.actor;checks++;
+  for(let i=0;i<entries.length;i++){
+    const entry=entries[i];if(!entry)continue;const a=entry.actor;heap.length=0;stamp++;nearby(a,i);
+    while(heap.length){
+      const j=next(),other=entries[j],b=other.actor;checks++;
       const dx=a.x-b.x,dy=a.y-b.y,squared=dx*dx+dy*dy,separation=entry.radius+other.radius;
       if(squared===0||squared>=separation*separation)continue;
       const d=Math.sqrt(squared),push=separation-d;
       const aRam=a.type==='charger'&&a.phase==='dash'&&b.type!=='durian',bRam=b.type==='charger'&&b.phase==='dash'&&a.type!=='durian';
       if(aRam&&!bRam){b.x-=dx/d*push;b.y-=dy/d*push;}else if(bRam&&!aRam){a.x+=dx/d*push;a.y+=dy/d*push;}else{a.x+=dx/d*push*.5;a.y+=dy/d*push*.5;b.x-=dx/d*push*.5;b.y-=dy/d*push*.5;}
-      relocate(j);
-      if(relocate(i)){
-        const pending=[...new Set([...candidates.slice(cursor+1),...nearby(a,j)])].sort((a,b)=>a-b);
-        candidates=[...candidates.slice(0,cursor+1),...pending];
-      }
+      relocate(j);if(relocate(i))nearby(a,j);
     }
   }
   return checks;
@@ -797,9 +836,11 @@ player.x=clamp(player.x,-arenaSize,arenaSize);player.y=clamp(player.y,-arenaSize
 if(isBossWorldFrozen()){updateHUD();return;}
 for(const e of enemies){if(e.hp<=0)continue;const oldX=e.x,oldY=e.y,wasRolling=e.knock>0||e.down>0;e.hit=Math.max(0,e.hit-dt);e.slipCooldown=Math.max(0,(e.slipCooldown||0)-dt);if(e.rise>0)e.rise=Math.max(0,e.rise-dt);if(e.carriedBy!==undefined){continue;}else if(e.projectile){updateThrownDurian(e,enemyDt);}else if(e.knock>0){e.knock-=dt;e.x+=e.kx*dt;e.y+=e.ky*dt;}else if(e.down>0){slide(e,dt);}else if(e.type==='charger'){updateCharger(e,dt,gameTempo());}else if(e.type==='thrower'){updateThrower(e,dt,gameTempo());}else{const dx=player.x-e.x,dy=player.y-e.y,d=Math.hypot(dx,dy)||1;const travel=Math.min(d,e.speed*enemyDt);e.x+=dx/d*travel;e.y+=dy/d*travel;}const bound=arenaSize-(isLargeBanana(e)?52:0);e.x=clamp(e.x,-bound,bound);e.y=clamp(e.y,-bound,bound);if(e.type==='durian'&&!e.projectile)advanceDurianRoll(e,oldX,oldY,wasRolling);updateEnemyFacing(e);}
 for(const fruit of enemies){if(fruit.carriedBy===undefined)continue;const owner=enemies.find(e=>e.id===fruit.carriedBy&&e.hp>0);if(owner){fruit.x=owner.x+(owner.facing||1)*48*characterScale();fruit.y=owner.y+8;fruit.z=50;}else{delete fruit.carriedBy;fruit.z=0;}}
+// Build once after movement and skill hits, before checking all grounded actors.
+const peelGrid=buildPeelGrid();
 // Grounded actors can be tripped by stationary or fast-moving red peels.
-if(!special&&player.z<=0&&player.down<=0&&player.slipCooldown<=0){const p=touchingPeel(player);if(p){if(!p.red)peels.splice(peels.indexOf(p),1);slip(player,p.red&&p.slideTime>0?p.angle:player.face);}}
-for(const e of enemies){if(e.hp<=0||e.carriedBy!==undefined||e.projectile||e.down>0||e.knock>0||e.slipCooldown>0)continue;const p=touchingPeel(e);if(p){if(!p.red)peels.splice(peels.indexOf(p),1);slip(e,p.red&&p.slideTime>0?p.angle:Math.atan2(player.y-e.y,player.x-e.x));if(e.type==='charger'){e.phase='approach';e.phaseTime=0;}}}
+if(!special&&player.z<=0&&player.down<=0&&player.slipCooldown<=0){const p=touchingPeel(player,peelGrid);if(p){if(!p.red){peelGrid.consumed.add(p);peels.splice(peels.indexOf(p),1);}slip(player,p.red&&p.slideTime>0?p.angle:player.face);}}
+for(const e of enemies){if(e.hp<=0||e.carriedBy!==undefined||e.projectile||e.down>0||e.knock>0||e.slipCooldown>0)continue;const p=touchingPeel(e,peelGrid);if(p){if(!p.red){peelGrid.consumed.add(p);peels.splice(peels.indexOf(p),1);}slip(e,p.red&&p.slideTime>0?p.angle:Math.atan2(player.y-e.y,player.x-e.x));if(e.type==='charger'){e.phase='approach';e.phaseTime=0;}}}
 // Fallen enemies are harmless; the player remains vulnerable while sliding or down.
 for(const e of enemies){if(e.hp<=0||e.down>0||special||e.carriedBy!==undefined||e.projectile)continue;const d=dist(player,e);if(e.type==='durian'&&d<35*characterScale()){hurt('撞到榴槤');break;}if(e.type!=='durian'&&e.hit<=0&&player.z<18&&d<(isLargeBanana(e)?45:29)*characterScale()){hurt('撞到香蕉');break;}}
 if(state!=='playing')return;

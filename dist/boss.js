@@ -1,6 +1,7 @@
 'use strict';
 let boss=null,bossElapsed=0,bossShots=[],bossClones=[];
 const bossMusicBuffers=new Map();
+let bossFireSprite=null;
 const bossMaxHp=10,bossFireDodgeHeight=58,bossShieldRadius=112,bossFireZ=20;
 function bossFirePattern(){
   if(boss.hp<=6)return {count:7,rows:3,rounds:2,gap:.18,roundGap:.35,aim:1,rest:.4,extra:0};
@@ -29,6 +30,14 @@ function startBossBattle(debug=false){
     const point=bossViewportPoint(W*x+(i-1)*26,H*y+(i===1?-20:15));peels.push({id:serial++,...point,age:.6});
   }
   $('finalCountdown').hidden=true;sfx('warning');syncMusic();updateHUD();
+}
+function prepareDebugBossStage(hp){
+  if(!debugUnlocked||!boss||![5,2].includes(hp))return;
+  // Skip the entrance, retaining its conversion of minions into ground peels.
+  updateBossEntrance(5);boss.hp=hp;
+  for(let previous=bossMaxHp;previous>hp;previous--)boss.stageSeen.add(previous);
+  boss.nextTeleport=bossElapsed+5;boss.nextShield=bossElapsed+3;
+  onBossHealthChanged();if(!isBossCinematic())beginBossMove();updateHUD();
 }
 function resumeBossWorld(){
   special=null;player.z=0;player.vz=0;player.down=0;player.recoil=0;player.inv=Math.max(player.inv,2.5);player.slipCooldown=Math.max(player.slipCooldown,.5);if(player.stompGuard>0)player.stompGuard=player.inv;combo=0;comboLife=0;bossShots=[];
@@ -407,8 +416,16 @@ function drawBossClonePreview(target){
   ctx.save();ctx.globalAlpha=progress;ctx.translate(p.x,p.y);ctx.scale(size,size);ctx.translate(-p.x,-p.y);
   drawBossActor({...target,isClone:true,hit:0,phase:'preview'});ctx.restore();
 }
+function prepareBossFireSprite(){
+  const surface=document.createElement('canvas');surface.width=surface.height=100;
+  const brush=surface.getContext('2d'),glow=brush.createRadialGradient(50,50,6,50,50,50);
+  glow.addColorStop(0,'#f0f5ad');glow.addColorStop(.35,'#b8dc79dd');glow.addColorStop(1,'#8ec56400');
+  brush.fillStyle=glow;brush.beginPath();brush.ellipse(50,50,50,50,0,0,Math.PI*2);brush.fill();
+  brush.fillStyle='#d9ed9f';brush.beginPath();brush.ellipse(50,50,18,22,0,0,Math.PI*2);brush.fill();bossFireSprite=surface;
+}
 function drawBossShots(){
-  for(const shot of bossShots){if(!isInView(shot,40,bossFireZ))continue;const p=screen(shot.x,shot.y,bossFireZ);ctx.save();const glow=ctx.createRadialGradient(p.x,p.y,3,p.x,p.y,25);glow.addColorStop(0,'#f0f5ad');glow.addColorStop(.35,'#b8dc79dd');glow.addColorStop(1,'#8ec56400');ellipse(p.x,p.y,25,25,glow);ellipse(p.x,p.y,9,11,'#d9ed9f');ctx.restore();}
+  if(!bossShots.length)return;if(!bossFireSprite)prepareBossFireSprite();
+  for(const shot of bossShots){if(!isInView(shot,40,bossFireZ))continue;const p=screen(shot.x,shot.y,bossFireZ);ctx.drawImage(bossFireSprite,p.x-25,p.y-25,50,50);}
 }
 function updateBossHUD(){
   const banner=boss?.phase==='entrance-banner';$('bossBanner').hidden=!banner;
