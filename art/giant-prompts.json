@@ -1,0 +1,14 @@
+{
+  "generator": "Built-in image_gen",
+  "transparent_background": true,
+  "assets": [
+    {
+      "filename": "giant-banana-body-v1.png",
+      "prompt": "Use case: stylized-concept. Asset: ONE isolated 2D Banana Hop game sprite on actual transparent background. Match supplied game's sliced banana king and minion: bold dark brown outlines, warm golden painterly cel shading, clean chunky readable silhouette, slightly elevated front view, circular cream banana cross section on top, rich yellow rind on curved front vertical edge. Centered full object with transparent margin. No scenery, ground, cast shadow, text, labels, sparkle clouds, panels, watermark or multiple objects. Draw ONE thick cylindrical banana slice, no face, NO eyes, no mouth, no crown, no arms or legs. This single slice is used as a stackable giant body segment AND a rotating jump platform, so its entire flat cream top with subtle radial banana seed motif must be unobstructed and clearly visible. Horizontal circular top looks elliptical due to elevated camera; strong thick yellow side wall. Keep warm midtones, not overexposed. No other slices or motion trails."
+    },
+    {
+      "filename": "giant-banana-head-v1.png",
+      "prompt": "Use case: stylized-concept. Asset: ONE isolated 2D Banana Hop game sprite on actual transparent background. Match supplied game's sliced banana king and minion: bold dark brown outlines, warm golden painterly cel shading, clean chunky readable silhouette, slightly elevated front view, circular cream banana cross section on top, rich yellow rind on curved front vertical edge. Centered full object with transparent margin. No scenery, ground, cast shadow, text, labels, sparkle clouds, panels, watermark or multiple objects. Draw ONE single thick cylindrical banana slice HEAD with the sliced banana king's gold crown and red jewels on top, and a black recessed face band on the front with two narrow glowing golden angry eyes, identical visual identity to the provided king. Exactly ONE cylinder with ONE crown; no stacked torso, no orbiting slices, no limbs. Crown base rests on flat cream top (the stomp weak point), readable silhouette and clear front face. Warm midtone golden rind."
+    }
+  ]
+}

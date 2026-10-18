@@ -1,12 +1,27 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const elements=new Map();const element=id=>{if(!elements.has(id))elements.set(id,{style:{},hidden:false,classList:{add(){},remove(){}},textContent:'',innerHTML:'',addEventListener(){},setAttribute(){},focus(){},getBoundingClientRect:()=>({width:1000,height:650,left:0,top:0}),setPointerCapture(){}});return elements.get(id);};
-const context={console,Math,Set,setTimeout,clearTimeout,Image:class{constructor(){this.complete=true;this.naturalWidth=64;this.naturalHeight=64;}decode(){return Promise.resolve();}},devicePixelRatio:1,document:{getElementById:element,addEventListener(){},createElement:()=>({getContext:()=>({drawImage(){},createRadialGradient(){return {addColorStop(){}};},beginPath(){},ellipse(){},fill(){}})})},window:{addEventListener(){}},ResizeObserver:class{observe(){}},requestAnimationFrame(){}};element('game').getContext=()=>({setTransform(){}});vm.createContext(context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/boss.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/surf.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/game.js','utf8'),context);const run=s=>vm.runInContext(s,context);
+const context={console,Math,Set,setTimeout,clearTimeout,Image:class{constructor(){this.complete=true;this.naturalWidth=64;this.naturalHeight=64;}decode(){return Promise.resolve();}},devicePixelRatio:1,document:{getElementById:element,addEventListener(){},createElement:()=>({getContext:()=>({drawImage(){},createRadialGradient(){return {addColorStop(){}};},beginPath(){},ellipse(){},fill(){}})})},window:{addEventListener(){}},ResizeObserver:class{observe(){}},requestAnimationFrame(){}};element('game').getContext=()=>({setTransform(){}});vm.createContext(context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/boss.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/surf.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/milk.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/entrance.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/giant.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/game.js','utf8'),context);// Combat tests bypass the opening; entrance coverage explicitly calls reset(true).
+vm.runInContext('const productionReset=reset;reset=(showEntrance=false)=>productionReset(showEntrance)',context);
+const run=s=>vm.runInContext(s,context);
 function test(name,body){body();console.log('PASS',name);}
 (async()=>{
 await run('loadGameAssets()');
+test('Main and debug menus use only the independent 蕉片崛起 and 蕉皮末日 entry labels',()=>{
+  const html=fs.readFileSync(__dirname+'/../dist/index.html','utf8');
+  const options=id=>Array.from(html.match(new RegExp('<select id="'+id+'">([\\s\\S]*?)</select>'))[1].matchAll(/<option value="([^"]+)">([^<]+)<\/option>/g),match=>[match[1],match[2]]);
+  assert.deepEqual(options('gameMode'),[['milk','蕉片崛起'],['milk-boss','蕉片崛起 (魔王戰)'],['survival','蕉皮末日'],['boss','蕉皮末日 (魔王戰)']]);
+  assert.deepEqual(options('debugStart'),[['62','蕉皮末日: 62s'],['32','蕉皮末日: 32s'],['12','蕉皮末日: 12s'],['boss-5','蕉皮末日 (魔王戰) : 魔王剩 5 血'],['boss-2','蕉皮末日 (魔王戰) : 魔王剩 2 血']]);
+  assert.doesNotMatch(html,/試作|試玩|原版|第一關|第二關/i);
+});
 test('Initial asset loading finishes before opening the main menu',()=>{assert.equal(run('assetsReady'),true);assert.equal(run('state'),'intro');assert.equal(element('start').disabled,false);assert.equal(element('loadingScreen').hidden,true);assert.ok(run('!!mutedFloor'));});
+test('Both stages share the original floor palette when switching stages',()=>{
+  assert.ok(run('mutedFloor'));
+  run("var floorMethods={},floorDraws=[];for(const key of ['save','restore','fillRect','drawImage']){floorMethods[key]=ctx[key];ctx[key]=key==='drawImage'?(image)=>floorDraws.push(image):()=>{}};var originalMilkStage=milkStage");
+  try{run('milkStage=false;drawFloor()');assert.ok(run('floorDraws.length>0&&floorDraws.every(image=>image===mutedFloor)'));run('floorDraws=[];milkStage=true;drawFloor()');assert.ok(run('floorDraws.length>0&&floorDraws.every(image=>image===mutedFloor)'));run('floorDraws=[];milkStage=false;drawFloor()');assert.ok(run('floorDraws.every(image=>image===mutedFloor)'));}
+  finally{run('milkStage=originalMilkStage;for(const key in floorMethods)ctx[key]=floorMethods[key]');}
+});
 test('Surf assets load and cache before play alongside the existing art',()=>{
-  assert.equal(run('gameAssets.length'),10);assert.ok(run('gameAssets.some(a=>a.image===heroSurfSprite)'));assert.ok(run('gameAssets.some(a=>a.image===surfItemSprite)'));
+  assert.equal(run('gameAssets.length'),20);assert.ok(run('gameAssets.some(a=>a.image===heroSurfSprite)'));assert.ok(run('gameAssets.some(a=>a.image===surfItemSprite)'));
   assert.equal(run('renderSprite(heroSurfSprite).height'),240);assert.equal(run('renderSprite(surfItemSprite).width'),160);
 });
 test('Surf requires inventory and rescues a fallen player without spending charge',()=>{
@@ -255,6 +270,12 @@ test('Red ram catches crossed targets, hits once per dash, and excludes durian',
 test('Yellow charger turns at viewport edge and charges again without becoming peel',()=>{run("reset();enemies=[];const looping=spawn(0,'charger',{x:430,y:0});looping.phase='dash';looping.aim=0;looping.dashSpeed=320;updateCharger(looping,.1)");assert.equal(run('looping.phase'),'brake');run('updateCharger(looping,.9)');assert.equal(run('looping.phase'),'turn');assert.equal(run('looping.hp'),1);assert.equal(run('peels.length'),0);run('updateCharger(looping,.5)');assert.equal(run('looping.phase'),'turn');run('updateCharger(looping,1.5)');assert.equal(run('looping.phase'),'aim');assert.ok(Math.cos(run('looping.aim'))<0);run('updateCharger(looping,.5)');assert.equal(run('looping.phase'),'dash');assert.equal(run('looping.hp'),1);assert.equal(run('peels.length'),0);});
 test('Ultimate splits a large green charger without stomp rewards or a peel',()=>{run('var beforeDashCharge=charge,beforeDashCombo=combo;hitEnemy(looping,false)');assert.equal(run('looping.hp'),0);assert.equal(run('peels.length'),0);assert.equal(run("enemies.filter(e=>e.type==='normal'&&e.hp===2).length"),2);assert.equal(run('charge'),run('beforeDashCharge'));assert.equal(run('combo'),run('beforeDashCombo'));assert.equal(run('stats.stompKills'),0);});
 test('New special enemy wave timers start at 10, 20, and 30 seconds',()=>{run('reset()');assert.equal(run('nextDurianAt'),10);assert.equal(run('nextChargerAt'),20);assert.equal(run('nextThrowerAt'),30);run('enemies=[];elapsed=29.99;updateThrowerSchedule()');assert.equal(run('enemies.length'),0);run('elapsed=30;updateThrowerSchedule()');assert.equal(run('enemies[0].type'),'thrower');assert.equal(run('enemyFrameIndex(enemies[0])'),3);assert.equal(run('enemies[0].speed'),(67.5+30*.24)*1.5);assert.equal(run('enemies[0].phase'),'seek');});
+test('Red thrower charge feedback grows during windup and ends on release or interruption',()=>{
+  run("reset();enemies=[];var readyThrower=spawn(0,'thrower',{x:200,y:0});readyThrower.phase='windup';readyThrower.phaseTime=.65");assert.equal(run('enemyChargeProgress(readyThrower)'),0);
+  run('readyThrower.phaseTime=.325');assert.ok(Math.abs(run('enemyChargeProgress(readyThrower)')-.5)<1e-8);
+  run("readyThrower.phase='seek'");assert.equal(run('enemyChargeProgress(readyThrower)'),null);
+  run("readyThrower.phase='windup';readyThrower.down=.2");assert.equal(run('enemyChargeProgress(readyThrower)'),null);
+});
 test('Thrower grabs an existing durian, winds up, then throws it toward player',()=>{run("reset();enemies=[];const tosser=spawn(0,'thrower',{x:200,y:0});const ammo=spawn(0,'durian',{x:220,y:0});tosser.throwCooldown=0;updateThrower(tosser,.01)");assert.equal(run('tosser.phase'),'windup');assert.equal(run('ammo.carriedBy'),run('tosser.id'));assert.equal(run('ammo.z'),50);run('updateThrower(tosser,.66)');assert.equal(run('ammo.carriedBy'),undefined);assert.ok(run('!!ammo.projectile'));assert.equal(run('ammo.projectile.toX'),0);assert.equal(run('ammo.projectile.toY'),0);assert.equal(run('enemies.length'),2);assert.equal(run('tosser.phase'),'seek');});
 test('Thrown durian can hit player, lands, and remains a normal enemy',()=>{run('updateThrownDurian(ammo,ammo.projectile.duration)');assert.equal(run('player.hp'),4);assert.equal(run('ammo.projectile'),undefined);assert.equal(run('ammo.z'),0);assert.equal(run('ammo.hp'),1);});
 test('Defeating a thrower releases held durian instead of deleting it',()=>{run("reset();enemies=[];const owner=spawn(0,'thrower',{x:100,y:0});const held=spawn(0,'durian',{x:110,y:0});owner.throwCooldown=0;updateThrower(owner,.01);hitEnemy(owner,true);owner.hit=0;hitEnemy(owner,true)");assert.equal(run('owner.hp'),0);assert.equal(run('held.carriedBy'),undefined);assert.equal(run('held.z'),0);assert.equal(run('held.hp'),1);});
@@ -303,11 +324,71 @@ test('Volume slider adjusts the shared output, mutes immediately, and restores t
 test('Arrow keys on the volume slider do not control the game',()=>{run("keys.clear();handleKeyDown({target:$('volume'),code:'ArrowLeft',key:'ArrowLeft',preventDefault(){throw Error('range keyboard intercepted');}})");assert.equal(run('keys.size'),0);});
 
 
-test('Small banana spawn frequency remains 75 percent of the previous curve throughout the run',()=>{for(const time of [0,20,60,100,150,179]){context.rateTime=time;assert.ok(Math.abs(run('smallSpawnInterval(rateTime)')-Math.max(.18,.8-time*.005)/.75)<1e-10);}run('reset()');assert.equal(run('enemies.length'),7);assert.ok(Math.abs(run('spawnClock')-.4/.75)<1e-10);});
+test('Viewport grid excludes crowded cells and retains every tie at the fifth density rank',()=>{
+  run("reset();enemies=[];spawnWarnings=[];player.x=0;player.y=0;var gridCells=naturalSpawnCells();var occupiedCell=gridCells[0];for(let i=0;i<4;i++)spawn(0,'normal',occupiedCell)");
+  assert.ok(run('naturalSpawnOptions().every(p=>p.col!==occupiedCell.col||p.row!==occupiedCell.row)'));
+  assert.ok(run('naturalSpawnOptions().every(p=>p.density===0)'));assert.ok(run('naturalSpawnOptions().length')>5);
+  run('var tiedCells=[0,0,1,1,2,2,2,2.5,4].map((density,id)=>({density,id}))');assert.equal(run('lowestDensityCells(tiedCells).length'),7);
+  assert.equal(run('lowestDensityCells([{density:3},{density:4}]).length'),0);
+  for(const corner of [-1,1]){context.gridCorner=corner;run('player.x=gridCorner*1240;player.y=gridCorner*1240');assert.ok(run('naturalSpawnOptions().length')>0);assert.ok(run('naturalSpawnOptions().every(p=>Math.abs(p.x)<=arenaSize-45&&Math.abs(p.y)<=arenaSize-45&&dist(p,player)>=140)'));}
+  run('reset()');
+});
+test('Both stages change sector probabilities at half time and prefer sparse forward or side cells',()=>{
+  for(const mode of ['milk','survival']){
+    context.gridMode=mode;run("$('gameMode').value=gridMode;reset();enemies=[];spawnWarnings=[];elapsed=roundDuration()/2-.01;var gridRandom=Math.random");
+    try{
+      for(const [roll,sector] of [[.1,'front'],[.65,'side'],[.9,'back']]){context.gridRoll=roll;run('Math.random=()=>gridRoll');assert.equal(run('chooseNaturalSpawn().sector'),sector);}
+      run('elapsed=roundDuration()/2');assert.equal(run('arrivalSectorWeights().front'),.8);assert.equal(run('arrivalSectorWeights().back'),0);
+      for(const [roll,sector] of [[.79,'front'],[.81,'side'],[.99,'side']]){context.gridRoll=roll;run('Math.random=()=>gridRoll');assert.equal(run('chooseNaturalSpawn().sector'),sector);}
+
+    }finally{run('Math.random=gridRandom;reset()');}
+  }
+  run("$('gameMode').value='survival';reset()");
+});
+test('Arrival heading uses only displacement in the most recent second including partial samples',()=>{
+  run('reset();spawnMotion=[];updateSpawnHeading(100,0,.75);updateSpawnHeading(0,100,.5)');assert.ok(Math.abs(run('spawnHeading.x')-100*2/3)<1e-8);assert.equal(run('spawnHeading.y'),100);
+  run('updateSpawnHeading(-20,0,.5)');assert.equal(run('spawnHeading.x'),-20);assert.equal(run('spawnHeading.y'),100);
+  run('updateSpawnHeading(-100,0,1)');assert.equal(run('spawnHeading.x'),-100);assert.equal(run('spawnHeading.y'),0);run('reset()');
+});
+test('Natural arrivals lock their warned point for half a second even when the player moves onto it, and freeze with pause',()=>{
+  for(const mode of ['milk','survival']){
+    context.arrivalMode=mode;run("$('gameMode').value=arrivalMode;reset();enemies=[];spawnWarnings=[];spawnClock=0;updateNaturalArrivals(.01);var warnedPoint={...spawnWarnings[0]};spawnClock=999");
+    assert.equal(run('enemies.length'),0);assert.equal(run('spawnWarnings.length'),1);
+    run('updateNaturalArrivals(.49)');assert.equal(run('enemies.length'),0);
+    run('updateNaturalArrivals(.02)');assert.equal(run('enemies.length'),1);assert.equal(run('enemies[0].x'),run('warnedPoint.x'));assert.equal(run('enemies[0].y'),run('warnedPoint.y'));
+    run('enemies=[];spawnClock=0;updateNaturalArrivals(.01);var lockedArrival={...spawnWarnings[0]};player.x=lockedArrival.x;player.y=lockedArrival.y;spawnClock=999;updateNaturalArrivals(.49)');assert.equal(run('enemies.length'),0);assert.equal(run('spawnWarnings[0].x'),run('lockedArrival.x'));assert.equal(run('spawnWarnings[0].y'),run('lockedArrival.y'));run('updateNaturalArrivals(.02)');assert.equal(run('enemies.length'),1);assert.equal(run('enemies[0].x'),run('lockedArrival.x'));assert.equal(run('enemies[0].y'),run('lockedArrival.y'));
+    run('spawnClock=0;updateNaturalArrivals(.01);var pausedArrival=spawnWarnings[0].time;pause();update(1)');assert.equal(run('spawnWarnings[0].time'),run('pausedArrival'));run('pause();reset()');assert.equal(run('spawnWarnings.length'),0);
+  }
+  run("$('gameMode').value='survival';reset();enemies=[];spawnClock=0;updateNaturalArrivals(.01);elapsed=119.99;update(.02)");assert.equal(run('spawnWarnings.length'),0);assert.ok(run('boss'));
+  run('reset()');
+});
+test('Scheduled waves survive a full population cap and release at most one enemy per half second',()=>{
+  run("$('gameMode').value='survival';reset();enemies=[];for(let i=0;i<110;i++)spawn(0,'durian',{x:1000,y:1000});spawnClock=0;updateNaturalArrivals(.01)");assert.equal(run('spawnDueWaves'),1);assert.equal(run('spawnWarnings.length'),0);
+  run('spawnClock=999;enemies=[];updateNaturalArrivals(.01)');assert.equal(run('spawnDueWaves'),0);assert.equal(run('spawnWarnings.length'),1);
+  run('spawnClock=0;updateNaturalArrivals(.01);spawnClock=999;updateNaturalArrivals(.81)');assert.equal(run('enemies.length'),1);assert.equal(run('spawnWarnings.length'),1);
+  run('updateNaturalArrivals(.49)');assert.equal(run('enemies.length'),1);run('updateNaturalArrivals(.02)');assert.equal(run('enemies.length'),2);assert.equal(run('spawnWarnings.length'),0);run('reset()');
+});
+test('Dense viewports and unavailable preferred directions still provide an arrival location',()=>{
+  run("reset();enemies=[];spawnWarnings=[];elapsed=90;var retryCells=naturalSpawnCells();for(const cell of retryCells)for(let i=0;i<4;i++)spawn(0,'normal',cell)");assert.equal(run('naturalSpawnOptions().length'),0);assert.ok(run('chooseNaturalSpawn()'));
+  run("enemies=[];spawnHeading={x:1,y:0};player.x=1249;player.y=0");assert.ok(run('chooseNaturalSpawn()'));run('reset()');
+});
+test('蕉皮末日 recycles the farthest yellow only and never awards combat resources',()=>{
+  run("$('gameMode').value='survival';reset();enemies=[];var nearYellow=spawn(0,'normal',{x:300,y:0}),farYellow=spawn(0,'normal',{x:900,y:0});nearYellow.hp=farYellow.hp=1;var protectedTypes=['charger','thrower','durian','milk','slice'];for(const kind of protectedTypes)spawn(0,kind,{x:1200,y:1000});for(let i=0;i<103;i++){var protectedGreen=spawn(0,'normal',{x:1100,y:1000});protectedGreen.hp=2}var recycledKills=kills,recycledCharge=charge,recycledPeels=peels.length,recycledStats=JSON.stringify(stats)");
+  assert.equal(run('enemies.length'),110);assert.equal(run('makeRoomForNaturalArrival()'),true);assert.equal(run('enemies.length'),109);assert.ok(run('enemies.includes(nearYellow)'));assert.equal(run('enemies.includes(farYellow)'),false);assert.ok(run('protectedTypes.every(type=>enemies.some(e=>e.type===type))'));assert.equal(run('kills'),run('recycledKills'));assert.equal(run('charge'),run('recycledCharge'));assert.equal(run('peels.length'),run('recycledPeels'));assert.equal(run('JSON.stringify(stats)'),run('recycledStats'));run('reset()');
+});
+milkTest('蕉片崛起 never reclaims milk enemies and releases reclaimed bottle claims without consuming bottles',()=>{
+  run("enemies=[];milkBottles=[];for(let i=0;i<46;i++)spawn(0,'milk',{x:1200,y:1200});var recycleBottle=spawnMilkBottle({x:1000,y:0}),recycleSlice=spawn(0,'slice',{x:1000,y:0});recycleBottle.claimantId=recycleSlice.id;var recycleNear=spawn(0,'slice',{x:200,y:0});var recycleBeforeKills=kills,recycleBeforeCharge=charge");
+  assert.equal(run('milkPopulation()'),48);assert.equal(run('makeRoomForNaturalArrival()'),true);assert.equal(run('enemies.includes(recycleSlice)'),false);assert.ok(run('enemies.includes(recycleNear)'));assert.equal(run("enemies.filter(e=>e.type==='milk').length"),46);assert.equal(run('milkBottles.length'),1);assert.equal(run('recycleBottle.claimantId'),undefined);assert.equal(run('kills'),run('recycleBeforeKills'));assert.equal(run('charge'),run('recycleBeforeCharge'));
+  run("enemies=[];for(let i=0;i<49;i++)spawn(0,'milk',{x:1200,y:1200});var loneRecyclable=spawn(0,'slice',{x:500,y:0})");assert.equal(run('makeRoomForNaturalArrival()'),false);assert.ok(run('enemies.includes(loneRecyclable)'));assert.equal(run('milkPopulation()'),50);
+});
+test('Late 蕉皮末日 arrivals spawn one enemy per wave with at least half a second between waves',()=>{
+  run("$('gameMode').value='survival';reset();enemies=[];elapsed=110;spawnClock=0;updateNaturalArrivals(.01);spawnClock=999;updateNaturalArrivals(.81)");assert.equal(run('enemies.length'),1);assert.equal(run('smallSpawnInterval()'),.5);run('reset()');
+});
+test('蕉皮末日 natural spawn attempts slow from 1.2 seconds to a 0.5 second minimum',()=>{for(const time of [0,20,60,100,150,179]){context.rateTime=time;assert.ok(Math.abs(run('smallSpawnInterval(rateTime)')-Math.max(.5,(.9-time*.005)/.75))<1e-10);}run('reset()');assert.equal(run('enemies.length'),7);assert.ok(Math.abs(run('spawnClock')-.4/.75)<1e-10);});
 test('Bunch indicators point to all four offscreen sides and disappear when visible or collected',()=>{run('reset();enemies=[];W=1000;H=650');for(const [x,y,edge] of [[-600,0,'left'],[600,0,'right'],[0,-600,'top'],[0,600,'bottom']]){context.indicatorX=x;context.indicatorY=y;run('var marker=bunchIndicator({x:indicatorX,y:indicatorY})');assert.ok(run('marker.x>=36&&marker.x<=W-36&&marker.y>=36&&marker.y<=H-36'));if(edge==='left')assert.equal(run('marker.x'),36);if(edge==='right')assert.equal(run('marker.x'),964);if(edge==='top')assert.equal(run('marker.y'),36);if(edge==='bottom')assert.equal(run('marker.y'),614);}assert.equal(run('bunchIndicator({x:0,y:0})'),null);run('pickups=[{id:19000,x:0,y:0,age:0}];updateItems(0)');assert.equal(run('pickups.length'),0);});
 test('Qi peel damage converts a red thrower only once and does not farm charge',()=>{run("reset();enemies=[];var qiRed=spawn(0,'thrower',{x:20,y:0});collectBunch();updateItems(.01)");assert.equal(run('qiRed.type'),'charger');assert.equal(run('qiRed.hp'),1);run('qiRed.hit=0;elapsed+=1;updateItems(0)');assert.equal(run('qiRed.hp'),1);assert.equal(run('charge'),0);assert.equal(run('combo'),0);});
 
-test('Enemy speed switches at 30 seconds remaining without shortening the clock',()=>{run("reset();enemies=[];spawnClock=100;nextDurianAt=200;nextChargerAt=200;nextThrowerAt=200;nextPickupAt=200;elapsed=89.99;keys.add('d');update(.01)");assert.equal(run('gameTempo()'),1.5);assert.equal(run('elapsed'),90);assert.ok(Math.abs(run('player.x')-2.05)<1e-8);assert.equal(element('tempoLabel').textContent,'存活倒數');assert.ok(run('spawnClock')>99);run('reset()');assert.equal(run('gameTempo()'),1);assert.equal(element('tempoLabel').textContent,'存活倒數');});
+test('Enemy speed switches at 30 seconds remaining without shortening the clock',()=>{run("reset();enemies=[];spawnClock=100;nextDurianAt=200;nextChargerAt=200;nextThrowerAt=200;nextPickupAt=200;elapsed=89.99;keys.add('d');update(.01)");assert.equal(run('gameTempo()'),1.5);assert.equal(run('elapsed'),90);assert.ok(Math.abs(run('player.x')-2.05)<1e-8);assert.equal(element('tempoLabel').textContent,'蕉皮末日');assert.ok(run('spawnClock')>99);run('reset()');assert.equal(run('gameTempo()'),1);assert.equal(element('tempoLabel').textContent,'蕉皮末日');});
 test('Enemy locomotion and flight accelerate at 30 seconds remaining while windup stays unchanged',()=>{run("reset();enemies=[];spawnClock=100;nextDurianAt=200;nextChargerAt=200;nextThrowerAt=200;nextPickupAt=200;elapsed=90;var tempoWalker=spawn(0,'normal',{x:500,y:0});tempoWalker.speed=100;var tempoCharger=spawn(0,'charger',{x:-300,y:0});tempoCharger.phase='aim';tempoCharger.phaseTime=.5;var tempoShot=spawn(0,'durian',{x:0,y:300});tempoShot.projectile={t:0,duration:1,startZ:50,fromX:0,fromY:300,toX:500,toY:300};update(.1)");assert.ok(Math.abs(run('tempoWalker.x')-485)<1e-8);assert.ok(Math.abs(run('tempoCharger.phaseTime')-.4)<1e-8);assert.ok(Math.abs(run('tempoShot.projectile.t')-.15)<1e-8);assert.ok(Math.abs(run('elapsed')-90.1)<1e-8);});
 test('Special spawn frequency stays unchanged during the final speed boost',()=>{run('reset();enemies=[];elapsed=100;nextChargerAt=100;nextThrowerAt=100;nextDurianAt=100;updateChargerSchedule();updateThrowerSchedule();updateDurianSchedule()');assert.ok(Math.abs(run('nextChargerAt-100')-(8-100/30)*1.5)<1e-8);assert.ok(Math.abs(run('nextThrowerAt-100')-(14-100/25))<1e-8);assert.ok(Math.abs(run('nextDurianAt-100')-(10-100/22))<1e-8);});
 
@@ -316,7 +397,7 @@ test('Dashing through a bunch emits all six qi peels exactly once',()=>{run('res
 test('A dash can collect a bunch on its last frame and normal airborne passing cannot',()=>{run('reset();enemies=[];spawnClock=100;charge=100;activate();special.t=.99;pickups=[{id:22002,x:5,y:0,age:0}];update(.02)');assert.equal(run('special'),null);assert.equal(run('pickups.length'),0);assert.equal(run('orbitPeels.length'),6);run('reset();enemies=[];spawnClock=100;player.z=80;player.vz=0;keys.add("d");pickups=[{id:22003,x:20,y:0,age:0}];update(.1)');assert.equal(run('pickups.length'),1);assert.equal(run('stats.bunches'),0);assert.equal(run('orbitPeels.length'),0);});
 test('Enemy bananas and durians cannot eat a bunch',()=>{for(const type of ['normal','charger','thrower','durian']){context.pickupEnemyType=type;run("reset();enemies=[];spawnClock=100;pickups=[{id:22004,x:300,y:0,age:0}];var notCollector=spawn(0,pickupEnemyType,{x:300,y:0});notCollector.speed=0;update(.01)");assert.equal(run('pickups.length'),1);assert.equal(run('stats.bunches'),0);assert.equal(run('orbitPeels.length'),0);}});
 
-test('Music speeds up at 60 and 30 seconds remaining and the final ten seconds display big digits',()=>{run('reset();enemies=[]');assert.equal(run('musicRate(59.99)'),1);assert.equal(run('musicRate(60)'),1.2);assert.equal(run('musicRate(90)'),1.5);assert.equal(run('musicRate(110)'),2);run('elapsed=60;updateHUD()');assert.equal(element('timer').textContent,'01:00');run('elapsed=90;updateHUD()');assert.equal(element('timer').textContent,'00:30');assert.equal(element('finalCountdown').hidden,true);run('elapsed=110;updateHUD()');assert.equal(element('finalCountdown').textContent,'10');assert.equal(element('finalCountdown').hidden,false);run('elapsed=119.9;updateHUD()');assert.equal(element('finalCountdown').textContent,'1');run('pause()');assert.equal(element('finalCountdown').hidden,true);run('pause()');assert.equal(element('finalCountdown').hidden,false);run('finish(true)');assert.equal(element('finalCountdown').hidden,true);});
+test('Music only speeds up to 1.2 at thirty seconds remaining and keeps the final countdown',()=>{run('reset();enemies=[]');assert.equal(run('musicRate(59.99)'),1);assert.equal(run('musicRate(60)'),1);assert.equal(run('musicRate(89.99)'),1);assert.equal(run('musicRate(90)'),1.2);assert.equal(run('musicRate(110)'),1.2);run('elapsed=60;updateHUD()');assert.equal(element('timer').textContent,'01:00');run('elapsed=90;updateHUD()');assert.equal(element('timer').textContent,'00:30');assert.equal(element('finalCountdown').hidden,true);run('elapsed=110;updateHUD()');assert.equal(element('finalCountdown').textContent,'10');assert.equal(element('finalCountdown').hidden,false);run('elapsed=119.9;updateHUD()');assert.equal(element('finalCountdown').textContent,'1');run('pause()');assert.equal(element('finalCountdown').hidden,true);run('pause()');assert.equal(element('finalCountdown').hidden,false);run('finish(true)');assert.equal(element('finalCountdown').hidden,true);});
 test('Faster music uses shorter synthesized loops with unity playback rate and matching musical offset',()=>{run(`
 var playbackRates=[],tempoStarts=[];
 audioCtx={currentTime:123,state:'running',destination:{},
@@ -324,7 +405,7 @@ createBuffer:(_channels,length,rate)=>({duration:length/rate,getChannelData:()=>
 createBufferSource:()=>({playbackRate:{setValueAtTime:v=>playbackRates.push(v)},connect(){},disconnect(){},start:(...args)=>tempoStarts.push(args),stop(){}}),
 createGain:()=>({gain:{setValueAtTime(){},linearRampToValueAtTime(){},setTargetAtTime(){}},connect(){},disconnect(){}})};
 state='playing';sound=true;elapsed=60;syncMusic();var firstTempoSource=musicSource,firstTempoBuffer=musicSource.buffer;
-`);assert.equal(run('playbackRates[0]'),1);assert.equal(run('musicSource.buffer.duration'),25);run('elapsed=90;updateMusicRate()');assert.equal(run('playbackRates[1]'),1);assert.equal(run('musicSource.buffer.duration'),20);assert.equal(run('tempoStarts[1][1]'),4);assert.equal(run('musicSource===firstTempoSource'),false);run('elapsed=65;updateMusicRate()');assert.equal(run('musicSource.buffer===firstTempoBuffer'),true);assert.equal(run('musicOffset(90)'),6);assert.equal(run('musicOffset(100)'),21);run('sound=false;syncMusic();sound=true;audioCtx=undefined;audioOutput=null;musicBuffer=null');});
+`);assert.equal(run('playbackRates[0]'),1);assert.equal(run('musicSource.buffer.duration'),30);run('elapsed=90;updateMusicRate()');assert.equal(run('playbackRates[1]'),1);assert.equal(run('musicSource.buffer.duration'),25);assert.equal(run('tempoStarts[1][1]'),0);assert.equal(run('musicSource===firstTempoSource'),false);run('elapsed=65;updateMusicRate()');assert.equal(run('musicSource.buffer===firstTempoBuffer'),true);assert.equal(run('musicOffset(90)'),0);assert.equal(run('musicOffset(100)'),12);run('sound=false;syncMusic();sound=true;audioCtx=undefined;audioOutput=null;musicBuffer=null');});
 test('Typing banana reveals debug start options only on the main menu',()=>{run("debugUnlocked=false;debugCode='';state='intro';$('debugOptions').hidden=true;for(const key of 'banan')handleDebugCode({key,code:'Key'+key.toUpperCase()})");assert.equal(run('debugUnlocked'),false);assert.equal(element('debugOptions').hidden,true);run("handleDebugCode({key:'a',code:'KeyA'})");assert.equal(run('debugUnlocked'),true);assert.equal(element('debugOptions').hidden,false);for(const remaining of [62,32,12]){context.debugRemaining=remaining;run("$('debugStart').value=String(debugRemaining);reset()");assert.equal(run('elapsed'),120-remaining);assert.equal(run('state'),'playing');assert.equal(element('debugOptions').hidden,true);assert.ok(run('nextDurianAt')>run('elapsed'));assert.ok(run('nextChargerAt')>run('elapsed'));assert.equal(run('enemies.length'),7);}run("debugUnlocked=false;debugCode='';for(const key of 'banana')handleDebugCode({key,code:'Key'+key.toUpperCase()})");assert.equal(run('debugUnlocked'),false);run("$('debugStart').value='120';reset()");assert.equal(run('elapsed'),0);});
 
 test('All four tempo versions retain the opening bass pitch instead of resampling it higher',()=>{run(`
@@ -349,7 +430,7 @@ test('Mobile enemy collision footprints shrink with sprites',()=>{run("window.ma
 
 
 test('Sprite caches include all frames and large variants at DPR-2 resolution',()=>{
-  assert.equal(run('renderSprites.size'),9);assert.equal(run('renderSprites.get(enemySprite).size'),8);
+  assert.equal(run('renderSprites.size'),19);assert.equal(run('renderSprites.get(enemySprite).size'),8);
   assert.equal(run('renderSprite(enemySprite,0,1).height'),192);assert.equal(run('renderSprite(enemySprite,0,2).height'),384);
   assert.equal(run('renderSprite(groundSprite,2).height'),256);assert.equal(run('renderSprite(bossSprite).height'),410);
   assert.equal(run('renderSprite(heroSprite)===renderSprite(heroSprite)'),true);assert.equal(run('renderSprite(heroSlipSprite)===renderSprite(heroHurtSprite)'),false);
@@ -372,7 +453,7 @@ test('All survival tempos and boss arrangements are ready before play and switch
     var repeatedFinal=currentBossMusicBuffer();
     createMusicBuffer=savedMusicGenerator;createBossMusicBuffer=savedBossMusicGenerator;boss=null;audioCtx=undefined;musicBuffer=null;
   `);
-  assert.deepEqual(Array.from(run('cachedTracks.map(track=>track.duration)')),[30,25,20,15]);assert.equal(run('cachedBossTrack.duration'),30);assert.equal(run('cachedBossFinal===repeatedFinal'),true);
+  assert.deepEqual(Array.from(run('cachedTracks.map(track=>track.duration)')),[30,30,25,25]);assert.equal(run('cachedBossTrack.duration'),30);assert.equal(run('cachedBossFinal===repeatedFinal'),true);
 });
 test('Grid indices update by flooring each axis, including negative cell boundaries',()=>{
   run('var cellActor={x:-.1,y:96};locateCollisionCell(cellActor)');assert.equal(run('cellActor.gridX'),-1);assert.equal(run('cellActor.gridY'),1);
@@ -438,7 +519,7 @@ test('Boss rises for three seconds, converts every living minion once, poses one
   assert.equal(run('new Set(peels.map(p=>p.id)).size'),5);assert.equal(run('bossShots.length'),0);
   run('update(.98)');assert.equal(run('boss.phase'),'entrance-pose');assert.equal(element('bossBanner').hidden,true);
   run('update(.02)');assert.equal(run('boss.phase'),'entrance-banner');assert.equal(element('bossBanner').hidden,false);assert.equal(run('peels.length'),5);
-  run("keys.add('d');charge=100;activate();jump();update(.9)");assert.equal(run('isBossEntrance()'),false);assert.equal(run('boss.phase'),'sea-aim');assert.equal(element('bossBanner').hidden,true);
+  run("keys.add('d');charge=100;activate();jump();update(1)");assert.equal(run('isBossEntrance()'),false);assert.equal(run('boss.phase'),'sea-aim');assert.equal(element('bossBanner').hidden,true);
   assert.equal(run('player.z'),0);assert.equal(run('keys.size'),0);assert.equal(run('charge'),100);assert.equal(run('boss.hp'),10);assert.equal(run('elapsed'),120);assert.ok(run('player.inv')>=2.5);
 });
 test('Pause freezes the entrance timer and resumes the same stage',()=>{
@@ -550,6 +631,10 @@ test('Boss health shortcuts require the unlocked debug menu',()=>{
   for(const shortcut of ['boss-5','boss-2']){context.bossShortcut=shortcut;run("debugUnlocked=false;$('gameMode').value='survival';$('debugStart').value=bossShortcut;reset()");assert.equal(run('boss'),null);assert.equal(run('elapsed'),0);}
   run("$('debugStart').value='120'");
 });
+test('Listed debug shortcuts select 蕉皮末日 even when the main menu was on 蕉片崛起',()=>{
+  for(const value of ['62','32','12','boss-5','boss-2']){context.debugChoice=value;run("debugUnlocked=true;$('gameMode').value='milk';$('debugStart').value=debugChoice;selectDebugStage();reset()");assert.equal(run('milkStage'),false);assert.equal(run('giantBattle'),null);if(value.startsWith('boss-'))assert.equal(run('boss.hp'),Number(value.slice(5)));else {assert.equal(run('elapsed'),120-Number(value));assert.equal(run('boss'),null);}}
+  run("debugUnlocked=false;$('gameMode').value='survival';$('debugStart').value='120';reset()");
+});
 test('Debug menu can enter the boss battle with peels and a fresh ten-banana health bar',()=>{run("debugUnlocked=true;$('debugStart').value='boss';reset()");assert.equal(run('elapsed'),120);assert.equal(run('boss.hp'),10);assert.equal(run('enemies.length'),7);assert.equal(run('boss.phase'),'entrance');assert.ok(run('peels.length')>=8);assert.equal(element('bossHud').hidden,false);assert.equal((element('bossBananas').innerHTML.match(/class="health-banana/g)||[]).length,10);run("debugUnlocked=false;$('debugStart').value='120';reset()");assert.equal(run('boss'),null);assert.equal(element('bossHud').hidden,true);assert.equal(element('gameClock').hidden,false);});
 test('Ghost fire strengthens at every early HP threshold and caps at three rows in two rounds',()=>{
   for(const [hp,count,rows,rounds] of [[10,3,1,1],[9,4,1,1],[8,5,2,1],[7,6,3,1],[6,7,3,2],[1,7,3,2]]){
@@ -569,7 +654,7 @@ test('Boss entry replaces the accelerated survival song and stays at unity rate 
       createGain:()=>({gain:{setValueAtTime(){},linearRampToValueAtTime(){},setTargetAtTime(){}},connect(){},disconnect(){}})};
     audioOutput=null;musicBuffer=null;debugUnlocked=false;sound=true;reset();elapsed=119.99;syncMusic();var survivalEndSource=musicSource;
   `);
-  assert.equal(run('survivalEndSource.buffer.duration'),15);
+  assert.equal(run('survivalEndSource.buffer.duration'),25);
   run('update(.02);var dedicatedBossSource=musicSource');
   assert.equal(run('boss.phase'),'entrance');assert.notEqual(run('dedicatedBossSource===survivalEndSource'),true);assert.equal(run('dedicatedBossSource.buffer.duration'),30);
   assert.equal(run('dedicatedBossSource.buffer===currentBossMusicBuffer()'),true);assert.equal(run('musicRate()'),1);assert.ok(run('bossSongStops.length')>=2);
@@ -782,6 +867,607 @@ test('Fire spread stays within a quarter circle and the quake radius exceeds the
   assert.ok(run('bossSeaRadius()')>run('bossRadius()')*1.4);
 });
 test('Boss exclusive music and final-health arrangement are distinct 30-second loops',()=>{run("var bossAudioContext={createBuffer(_c,n,r){var data=new Float32Array(n);return{duration:n/r,getChannelData:()=>data};}},bossTrack=createBossMusicBuffer(bossAudioContext,false),bossFinalTrack=createBossMusicBuffer(bossAudioContext,true)");assert.equal(run('bossTrack.duration'),30);assert.equal(run('bossFinalTrack.duration'),30);assert.ok(run('bossTrack.getChannelData(0).every(Number.isFinite)'));assert.ok(run('bossFinalTrack.getChannelData(0).every(Number.isFinite)'));assert.ok(run('bossTrack.getChannelData(0).every(v=>Math.abs(v)<.65)'));assert.ok(run('Math.abs(bossTrack.getChannelData(0)[0]-bossTrack.getChannelData(0).at(-1))<.03'));assert.ok(run('bossTrack.getChannelData(0).some((v,i)=>v!==bossFinalTrack.getChannelData(0)[i])'));});
+
+function milkTest(name,body){test(name,()=>{run("$('gameMode').value='milk';debugUnlocked=false;reset()");try{body();}finally{run("$('gameMode').value='survival';delete window.matchMedia;reset()");}});}
+milkTest('Stage HUD and victory retain the formal name instead of development labels',()=>{
+  assert.match(element('tempoLabel').textContent,/蕉片崛起/);
+  run('enemies=[];elapsed=59.99;update(.02)');assert.ok(run('giantBattle'));assert.equal(run('boss'),null);assert.equal(element('gameClock').hidden,true);
+  run('finish(true)');assert.match(element('overlayTitle').innerHTML,/蕉片崛起/);assert.doesNotMatch(element('overlayTitle').innerHTML,/試作|試玩|原版|第一關|第二關/);
+  run("$('gameMode').value='survival';reset()");assert.equal(run('giantBattle'),null);assert.match(element('tempoLabel').textContent,/蕉皮末日/);
+  run('enemies=[];elapsed=119.99;update(.02)');assert.ok(run('boss'));assert.equal(run('giantBattle'),null);
+});
+milkTest('蕉片崛起 arrivals build pressure at thirty and fifty seconds independently of 蕉皮末日',()=>{
+  for(const [at,min,max] of [[0,2,5],[29.99,2,5],[30,1.5,3],[49.99,1.5,3],[50,.8,1.4],[59,.8,1.4]]){context.densityTime=at;context.densityMin=min;context.densityMax=max;assert.ok(run('Array.from({length:40},()=>smallSpawnInterval(densityTime)).every(t=>t>=densityMin&&t<=densityMax)'));}
+  assert.ok(run('spawnClock>=2&&spawnClock<=5'));
+  run('enemies=[];milkBottles=[];player.inv=99;elapsed=0;spawnClock=0;update(.01);var scheduledArrival=spawnClock;enemies=[]');assert.ok(run('scheduledArrival>=2&&scheduledArrival<=5'));
+  assert.equal(run('spawnWarnings.length'),1);run('update(.49)');assert.equal(run('enemies.length'),0);run('update(.02)');assert.equal(run('milkPopulation()'),3);
+  run("$('gameMode').value='survival';reset()");assert.ok(Math.abs(run('smallSpawnInterval(0)')-.9/.75)<1e-8);assert.ok(Math.abs(run('spawnClock')-.4/.75)<1e-8);
+});
+milkTest('Milk pairs and later supplies stay at least 500 apart, including near arena corners',()=>{
+  for(const corner of [0,1200,-1200]){context.milkCorner=corner;run('milkBottles=[];player.x=player.y=milkCorner;spawnMilkPair()');assert.equal(run('milkBottles.length'),2);assert.ok(run('dist(milkBottles[0],milkBottles[1])>=500'));
+    run('for(let i=0;i<5;i++)spawnMilkPair()');assert.equal(run('milkBottles.length'),12);assert.ok(run('milkBottles.every((a,i)=>milkBottles.slice(i+1).every(b=>dist(a,b)>=500))'));assert.ok(run('milkBottles.every(b=>Math.abs(b.x)<=arenaSize-50&&Math.abs(b.y)<=arenaSize-50)'));
+  }
+  assert.ok(500>205*1.5);
+});
+milkTest('蕉片崛起 starts at sixty seconds, uses slice minions and transitions to its own giant battle',()=>{
+  assert.equal(run('roundDuration()'),60);assert.equal(element('timer').textContent,'01:00');assert.equal(run('enemies.length'),2);assert.equal(run('milkPopulation()'),6);assert.ok(run("enemies.every(e=>e.type==='slice'&&e.hp===3&&e.stackCount===3)"));assert.equal(run('milkBottles.length'),2);
+  run('enemies=[];spawnClock=999;elapsed=59.99;update(.02)');assert.equal(run('state'),'playing');assert.equal(run('elapsed'),60);assert.equal(run('boss'),null);assert.ok(run('giantBattle'));assert.equal(run('liveGiants().length'),2);
+});
+milkTest('Milk pickup equips a fuel-limited bottle jet without healing, charge or invulnerability',()=>{
+  run('enemies=[];milkBottles=[];player.hp=3;charge=25;spawnMilkBottle({x:0,y:0});updateMilkStage(.01,null)');
+  assert.ok(run('milkPack'));assert.equal(run('milkBottles.length'),0);assert.equal(run('player.hp'),3);assert.equal(run('charge'),25);assert.equal(run('player.inv'),0);
+  run("hurt('milk pack is not armor')");assert.equal(run('player.hp'),2);
+  run('player.down=0;player.z=50;var ammoBefore=milkPack.ammo;updateMilkSpray(.5)');assert.equal(run('milkPack.ammo'),run('ammoBefore'));
+  run('player.z=0;special={};updateMilkSpray(.5)');assert.equal(run('milkPack.ammo'),run('ammoBefore'));
+  run("special=null;keys.add(' ');updateMilkSpray(8);keys.clear()");assert.equal(run('milkPack'),null);
+});
+milkTest('Milk pickup uses landing and swept movement, and refills existing inventory',()=>{
+  run('enemies=[];milkBottles=[];spawnMilkBottle({x:0,y:0});player.z=60;collectMilkBottles(null)');assert.equal(run('milkPack'),null);
+  run('player.z=0;collectMilkBottles(null);spawnMilkBottle({x:0,y:0});collectMilkBottles(null)');assert.equal(run('milkBottles.length'),0);assert.equal(run('milkPack.ammo'),5);
+  run('milkPack=null;milkBottles=[];spawnMilkBottle({x:60,y:0});player.x=120;collectMilkBottles({x:0,y:0,grounded:true,dashing:false})');assert.ok(run('milkPack'));assert.equal(run('milkBottles.length'),0);
+});
+milkTest('Milk jet waits for held input, consumes continuous fuel, refills, and removes empty equipment',()=>{
+  run('enemies=[];milkBottles=[];milkDrops=[];milkPack=null;spawnMilkBottle({x:0,y:0});collectMilkBottles(null);updateMilkHUD();updateMilkSpray(1)');assert.equal(run('milkPack.ammo'),5);assert.equal(run('milkDrops.length'),0);assert.equal(element('milkTime').textContent,'100%');
+  run("keys.add(' ');updateMilkSpray(.3);updateMilkHUD()");assert.ok(Math.abs(run('milkPack.ammo')-4)<1e-8);assert.equal(element('milkTime').textContent,'80%');
+  run("keys.clear();var releasedFuel=milkPack.ammo;updateMilkSpray(1)");assert.equal(run('milkPack.ammo'),run('releasedFuel'));
+  run('var refillCooldown=milkPack.emit;spawnMilkBottle({x:0,y:0});collectMilkBottles(null)');assert.equal(run('milkPack.ammo'),5);assert.equal(run('milkPack.emit'),run('refillCooldown'));
+  run("keys.add(' ');updateMilkSpray(1.49);updateMilkHUD()");assert.ok(run('milkPack.ammo')>0);run('updateMilkSpray(.01);updateMilkHUD();keys.clear()');assert.equal(run('milkPack'),null);assert.equal(element('milkGauge').hidden,true);
+});
+milkTest('Keyboard jet lifts and hovers, allows steering, and falls on release without granting immunity',()=>{
+  for(const mobile of [false,true]){
+    context.jetMobile=mobile;run("window.matchMedia=()=>({matches:jetMobile});reset();enemies=[];milkBottles=[];spawnClock=999;milkPack={ammo:5,emit:0};handleKeyDown({code:'Space',key:' ',preventDefault(){}});keys.add('d');for(let i=0;i<60;i++)update(1/60)");assert.ok(Math.abs(run('player.z')-108*(mobile?.7:1))<1e-8);assert.equal(run('player.vz'),0);assert.ok(run('player.x')>200);assert.equal(run('player.inv'),0);assert.ok(run('milkPack.ammo')<5);
+    run("handleKeyUp({code:'Space',key:' '});keys.clear();var landedFuel=milkPack.ammo;for(let i=0;i<60;i++)update(1/60)");assert.equal(run('player.z'),0);assert.equal(run('milkPack.ammo'),run('landedFuel'));
+  }
+});
+milkTest('Slices outrun milk enemies but seek ground bottles instead of gathering around milk enemies',()=>{
+  for(const time of [0,30,59]){
+    context.sliceSpawnTime=time;run("elapsed=sliceSpawnTime;var fastSlice=spawn(0,'normal',{x:0,y:0})");assert.ok(run('fastSlice.speed')>=110);assert.ok(run('fastSlice.speed')<124);assert.ok(run('fastSlice.speed')>82);
+  }
+  run("enemies=[];milkBottles=[];player.x=-1000;spawnMilkBottle({x:200,y:0});var movingBottle=spawn(0,'normal',{x:200,y:0});movingBottle.sliceGoal='bottle';movingBottle.sliceBottleId=milkBottles[0].id;updateMilkClaims(1);var chasingSlice=spawn(0,'normal',{x:40,y:0});chasingSlice.speed=110;moveMilkEnemy(chasingSlice,.1)");
+  assert.ok(run('chasingSlice.x')<40);assert.equal(run('nearestMilkBottle(chasingSlice)'),null);
+  run("spawnMilkBottle({x:40,y:200});chasingSlice.sliceHop=null;chasingSlice.z=0;chasingSlice.sliceGoal='bottle';chasingSlice.sliceBottleId=milkBottles[0].id;chasingSlice.sliceBottleRevision=milkBottleRevision;var seekBefore=chasingSlice.y;moveMilkEnemy(chasingSlice,.1)");assert.ok(run('chasingSlice.y')>run('seekBefore'));assert.ok(run('nearestMilkBottle(chasingSlice)'));
+  run('chasingSlice.x=movingBottle.x;chasingSlice.y=movingBottle.y;chasingSlice.sliceHop=null;chasingSlice.z=0;updateMilkClaims(.91)');assert.equal(run('movingBottle.hp'),2);assert.equal(run('chasingSlice.hp'),1);assert.equal(run('kills'),0);
+});
+milkTest('Jet droplets travel vertically downward and damage only enemies beneath, once per pulse without charge',()=>{
+  run("enemies=[];milkBottles=[];milkDrops=[];milkPack=null;player.z=108;var underJet=spawn(0,'slice',{x:0,y:8}),besideJet=spawn(0,'slice',{x:100,y:8});underJet.hp=4;emitPlayerMilkJet()");assert.equal(run('milkDrops.length'),3);assert.ok(run('milkDrops.every(d=>d.jet&&d.vz<0&&d.z>90)'));
+  run('updateMilkSpray(.05)');assert.equal(run('underJet.hp'),4);
+  run('updateMilkSpray(.25)');assert.equal(run('underJet.hp'),3);assert.equal(run('besideJet.hp'),1);assert.equal(run('charge'),0);assert.equal(run('milkDrops.length'),0);
+  run('underJet.hit=0;underJet.knock=0;emitPlayerMilkJet();updateMilkSpray(.3)');assert.equal(run('underJet.hp'),2);
+});
+milkTest('Touch hold and cancel drive the jet, while pause and skills stop fuel use and restart clears touch state',()=>{
+  run("enemies=[];milkBottles=[];spawnClock=999;milkPack={ammo:5,emit:0};startMilkJetTouch({pointerId:17,preventDefault(){}});update(.1)");assert.ok(run('player.z')>0);assert.ok(run('milkPack.ammo')<5);
+  run('releaseMilkJetTouch({pointerId:17});var touchFuel=milkPack.ammo;update(.1)');assert.equal(run('milkPack.ammo'),run('touchFuel'));
+  run("keys.add(' ');special={mode:'surf'};updateMilkSpray(.5)");assert.equal(run('milkPack.ammo'),run('touchFuel'));
+  run("special=null;pause();update(1)");assert.equal(run('milkPack.ammo'),run('touchFuel'));assert.equal(run('milkJetTouch'),null);
+  run('pause();reset()');assert.equal(run('milkPack'),null);assert.equal(run('milkJetTouch'),null);
+});
+milkTest('A single stomp defeats a freshly formed milk enemy, while ordinary damage stays unchanged',()=>{
+  run("enemies=[];milkBottles=[];spawnClock=999;player.x=500;spawnMilkBottle({x:0,y:0});var oneStompMilk=spawn(0,'slice',{x:0,y:0});oneStompMilk.sliceGoal='bottle';oneStompMilk.sliceBottleId=milkBottles[0].id;updateMilkClaims(1)");
+  assert.equal(run('oneStompMilk.type'),'milk');assert.equal(run('oneStompMilk.hp'),2);
+  run('var milkKillsBefore=kills;player.x=0;player.y=0;player.z=44;player.vz=-120;oneStompMilk.hit=0;update(.02)');
+  assert.equal(run('oneStompMilk.hp'),0);assert.equal(run('kills'),run('milkKillsBefore+1'));assert.equal(run('stats.stompKills'),1);assert.equal(run('player.hp'),5);assert.ok(run('player.vz')>0);assert.equal(run('peels.length'),0);
+  run("var ordinaryMilk=spawn(0,'slice',{x:500,y:0});ordinaryMilk.type='milk';ordinaryMilk.hp=2;hitEnemy(ordinaryMilk,false)");assert.equal(run('ordinaryMilk.hp'),1);
+});
+
+milkTest('Slices transform after windup and the player can steal or interrupt the bottle first',()=>{
+  run("enemies=[];milkBottles=[];player.x=500;spawnMilkBottle({x:0,y:0});var drinkSlice=spawn(0,'normal',{x:0,y:0});drinkSlice.sliceGoal='bottle';drinkSlice.sliceBottleId=milkBottles[0].id;updateMilkClaims(.4)");assert.equal(run('drinkSlice.type'),'slice');
+  run('updateMilkClaims(.51)');assert.equal(run('drinkSlice.type'),'milk');assert.equal(run('drinkSlice.hp'),2);assert.equal(run('milkBottles.length'),0);
+  run("enemies=[];milkBottles=[];player.x=0;spawnMilkBottle({x:0,y:0});var stolenSlice=spawn(0,'normal',{x:0,y:0});stolenSlice.drinking=.89;stolenSlice.milkTarget=milkBottles[0].id;updateMilkStage(.02,null)");assert.equal(run('stolenSlice.type'),'slice');assert.ok(run('milkPack'));
+  run("milkPack=null;player.x=500;spawnMilkBottle({x:0,y:0});stolenSlice.hp=2;stolenSlice.drinking=.8;stolenSlice.milkTarget=milkBottles[0].id;hitEnemy(stolenSlice,false);updateMilkClaims(.2)");assert.equal(run('stolenSlice.drinking'),0);assert.equal(run('stolenSlice.type'),'slice');
+});
+milkTest('A ground bottle consumes exactly one slice and the milk enemy never absorbs more or heals',()=>{
+  run("enemies=[];milkBottles=[];player.x=500;spawnMilkBottle({x:0,y:0});for(let i=0;i<5;i++){var atomicSlice=spawn(0,'normal',{x:0,y:0});atomicSlice.sliceGoal='bottle';atomicSlice.sliceBottleId=milkBottles[0].id;}updateMilkClaims(1)");
+  assert.equal(run("enemies.filter(e=>e.type==='milk').length"),1);assert.equal(run("enemies.find(e=>e.type==='milk').hp"),2);assert.equal(run("enemies.filter(e=>e.hp>0&&e.type==='slice').length"),4);assert.equal(run('kills'),0);assert.equal(run('peels.length'),0);
+  run("var fixedMilk=enemies.find(e=>e.type==='milk');fixedMilk.hp=1;updateMilkClaims(2)");assert.equal(run('fixedMilk.hp'),1);assert.equal(run('fixedMilk.speed'),62);assert.equal(run("enemies.filter(e=>e.hp>0&&e.type==='slice').length"),4);
+});
+milkTest('A bottle admits one slice and nearby incoming slices cannot restack the drinker',()=>{
+  run("enemies=[];milkBottles=[];player.x=600;var claimBottle=spawnMilkBottle({x:0,y:0});var claiming=spawn(0,'slice',{x:0,y:0}),competing=spawn(0,'slice',{x:5,y:0});for(const e of [claiming,competing]){e.sliceGoal='bottle';e.sliceBottleId=claimBottle.id;}updateMilkClaims(.3)");assert.equal(run('claiming.drinking'),.3);assert.equal(run('competing.drinking'),0);assert.equal(run('claimBottle.claimantId'),run('claiming.id'));
+  run('competing.z=12');assert.equal(run('mergeLandingSlice(competing,20,12)'),false);assert.equal(run('claiming.stackCount||1'),1);
+  run('competing.z=0;separateEnemies()');assert.equal(run('claiming.x'),0);assert.ok(run('competing.x')>=32);
+  run('updateMilkClaims(.61)');assert.equal(run('claiming.type'),'milk');assert.equal(run('milkBottles.length'),0);assert.equal(run('competing.hp'),1);
+});
+milkTest('Milk claims release on interruption and finish beside a charging stack under actual updates',()=>{
+  run("enemies=[];milkBottles=[];player.x=800;spawnClock=999;var sharedBottle=spawnMilkBottle({x:0,y:0});var claimInterruptedSlice=spawn(0,'slice',{x:0,y:0}),claimReplacementSlice=spawn(0,'slice',{x:5,y:0});for(const e of [claimInterruptedSlice,claimReplacementSlice]){e.sliceGoal='bottle';e.sliceBottleId=sharedBottle.id;}updateMilkClaims(.2);claimInterruptedSlice.knock=.5;updateMilkClaims(.2)");assert.equal(run('claimInterruptedSlice.drinking'),0);assert.equal(run('sharedBottle.claimantId'),run('claimReplacementSlice.id'));
+  run('updateMilkClaims(.71)');assert.equal(run('claimReplacementSlice.type'),'milk');
+  run("enemies=[];milkBottles=[];var stackBottle=spawnMilkBottle({x:0,y:0});var besideStack=spawnSliceStack(0,{x:10,y:0});var claimPatientSlice=spawn(0,'slice',{x:0,y:0});claimPatientSlice.sliceGoal='bottle';claimPatientSlice.sliceBottleId=stackBottle.id;for(let i=0;i<60&&claimPatientSlice.type==='slice';i++)update(1/60)");assert.equal(run('claimPatientSlice.type'),'milk');assert.equal(run('besideStack.stackCount'),3);
+});
+milkTest('Milk enemies fire five long-range projectiles that can be jumped',()=>{
+  run("enemies=[];milkBottles=[];player.x=500;spawnMilkBottle({x:0,y:0});var firingMilk=spawn(0,'normal',{x:0,y:0});firingMilk.sliceGoal='bottle';firingMilk.sliceBottleId=milkBottles[0].id;updateMilkClaims(1)");
+  for(const count of [5]){run("milkDrops=[];firingMilk.milkPhase='aim';firingMilk.milkTime=0;firingMilk.milkAim=0;moveMilkEnemy(firingMilk,1)");assert.equal(run('milkDrops.length'),count);assert.ok(run('milkDrops.every(d=>d.life===3)'));assert.ok(run('Math.abs(milkDrops[2].vx*milkDrops[2].life-720)<1e-8'));}
+  run('milkDrops=[];player.x=0;player.y=0;player.inv=0;player.z=60;emitMilkDrop({x:-70,y:0},0,true);updateMilkSpray(.5)');assert.equal(run('player.hp'),5);
+  run('milkDrops=[];player.z=0;emitMilkDrop({x:-70,y:0},0,true);updateMilkSpray(.5)');assert.equal(run('player.hp'),4);
+});
+milkTest('Pause and mobile gate freeze milk ammo, claims and projectiles; restart clears all milk state',()=>{
+  run('milkPack={ammo:5,emit:0};emitMilkDrop(player,0);var dropStart=milkDrops[0].x;pause();update(1)');assert.equal(run('milkPack.ammo'),5);assert.equal(run('milkDrops[0].x'),run('dropStart'));assert.equal(element('milkGauge').hidden,true);
+  run('pause();mobilePlayBlocked=true;update(1)');assert.equal(run('milkPack.ammo'),5);run('mobilePlayBlocked=false;reset()');assert.equal(run('milkPack'),null);assert.equal(run('milkDrops.length'),0);
+  run("$('gameMode').value='survival';reset()");assert.equal(run('milkStage'),false);assert.equal(run('roundDuration()'),120);assert.equal(run('milkBottles.length'),0);assert.ok(run("enemies.every(e=>e.type==='normal')"));
+});
+milkTest('Stacks charge one second, fire straight at seconds two and three, then release the base to hop',()=>{
+  for(const mobile of [false,true]){
+    context.salvoMobile=mobile;run("window.matchMedia=()=>({matches:salvoMobile});enemies=[];milkBottles=[];player.x=300;player.y=0;var splittingStack=spawnSliceStack(0,{x:0,y:0});moveMilkEnemy(splittingStack,1)");assert.equal(run('splittingStack.stackCount'),3);assert.equal(run('splittingStack.x'),0);
+    run('moveMilkEnemy(splittingStack,.99)');assert.equal(run('enemies.length'),1);
+    run('moveMilkEnemy(splittingStack,.01)');assert.equal(run('splittingStack.stackCount'),2);assert.equal(run('milkPopulation()'),3);assert.ok(run('enemies[1].sliceFlight'));assert.equal(run('enemies[1].sliceFlight.startZ'),32);
+    assert.ok(run('Math.abs(enemies[1].sliceFlight.bx-(300+201.6*characterScale()))<1e-8'));assert.equal(run('enemies[1].sliceFlight.by'),0);
+    run('player.x=0;player.y=300;moveMilkEnemy(splittingStack,.99)');assert.equal(run('enemies.length'),2);
+    run('moveMilkEnemy(splittingStack,.01)');assert.equal(run('splittingStack.stackCount'),1);assert.equal(run('enemies.length'),3);assert.ok(run('Math.abs(enemies[2].sliceFlight.by-(300+201.6*characterScale()))<1e-8'));assert.equal(run('enemies[2].sliceFlight.startZ'),16);
+    run('player.x=-100;player.y=-100;for(const child of enemies.slice(1))moveMilkEnemy(child,10);moveMilkEnemy(splittingStack,10);spawnMilkBottle({x:0,y:0});updateMilkClaims(2);var anchoredNeighbour=spawn(0,\'slice\',{x:10,y:0});separateEnemies()');assert.ok(run('splittingStack.x')<0);assert.ok(run('splittingStack.y')<0);assert.equal(run('splittingStack.type'),'slice');assert.ok(run('enemies.slice(1,3).every(e=>!e.sliceFlight)'));assert.equal(run('kills'),0);
+  }
+});
+milkTest('New bottles trigger a distance-weighted reroll using the nearest bottle, otherwise targets stay locked',()=>{
+  run("enemies=[];milkBottles=[];player.x=-300;var lockedBottle=spawnMilkBottle({x:200,y:0});var goalSlice=spawn(0,'slice',{x:0,y:0});var goalRandom=Math.random;Math.random=()=>.49;sliceGoal(goalSlice);Math.random=goalRandom");assert.equal(run('goalSlice.sliceBottleId'),run('lockedBottle.id'));
+  run("var nearerBottle=spawnMilkBottle({x:10,y:0});Math.random=()=>.1;sliceGoal(goalSlice);Math.random=goalRandom");assert.equal(run('goalSlice.sliceBottleId'),run('nearerBottle.id'));
+  run("Math.random=()=>.999;sliceGoal(goalSlice);Math.random=goalRandom");assert.equal(run('goalSlice.sliceBottleId'),run('nearerBottle.id'));
+  run("milkBottles=milkBottles.filter(b=>b!==nearerBottle);Math.random=()=>.999;sliceGoal(goalSlice);Math.random=goalRandom");assert.equal(run('goalSlice.sliceGoal'),'player');
+  run("var newestBottle=spawnMilkBottle({x:2,y:0});Math.random=()=>.1;sliceGoal(goalSlice);Math.random=goalRandom");assert.equal(run('goalSlice.sliceBottleId'),run('newestBottle.id'));
+  run("milkBottles=[];var fallbackSlice=spawn(0,'slice',{x:0,y:0});sliceGoal(fallbackSlice);var fallbackBottle=spawnMilkBottle({x:1,y:0});Math.random=()=>.1;sliceGoal(fallbackSlice);Math.random=goalRandom");assert.equal(run('fallbackSlice.sliceGoal'),'bottle');assert.equal(run('fallbackSlice.sliceBottleId'),run('fallbackBottle.id'));
+});
+milkTest('Nearest bottle supplies the probability denominator and a full failed bottle spawn does not reroll goals',()=>{
+  run("enemies=[];milkBottles=[];player.x=8;player.y=0;var nearGoalBottle=spawnMilkBottle({x:2,y:0});spawnMilkBottle({x:80,y:0});var chanceSlice=spawn(0,'slice',{x:0,y:0});var chanceRandom=Math.random;Math.random=()=>.81;sliceGoal(chanceSlice);Math.random=chanceRandom");assert.equal(run('chanceSlice.sliceGoal'),'player');
+  run('while(milkBottles.length<milkRules.bottleLimit)spawnMilkBottle({x:500,y:500});sliceGoal(chanceSlice);var oldRevision=milkBottleRevision;var oldGoal=chanceSlice.sliceGoal;var oldBottle=chanceSlice.sliceBottleId');assert.equal(run('spawnMilkBottle({x:0,y:0})'),null);assert.equal(run('milkBottleRevision'),run('oldRevision'));run('sliceGoal(chanceSlice)');assert.equal(run('chanceSlice.sliceGoal'),run('oldGoal'));assert.equal(run('chanceSlice.sliceBottleId'),run('oldBottle'));
+});
+milkTest('Hopping slices reform two and three layers without duplicating population and release moving bases again',()=>{
+  for(const mobile of [false,true]){
+    context.mergeMobile=mobile;run("window.matchMedia=()=>({matches:mergeMobile});enemies=[];milkBottles=[];player.x=0;player.y=0;var mergeBase=spawn(0,'slice',{x:0,y:0}),hoppingSlice=spawn(0,'slice',{x:-60,y:0});hoppingSlice.sliceGoal='player';hoppingSlice.speed=100;moveMilkEnemy(hoppingSlice,.315)");assert.ok(run('hoppingSlice.z')>0);assert.ok(run('hoppingSlice.x')>-60);assert.equal(run('mergeBase.stackCount||1'),1);
+    run('moveMilkEnemy(hoppingSlice,.21);moveMilkEnemy(hoppingSlice,.06)');assert.equal(run('mergeBase.stackCount'),2);assert.equal(run('mergeBase.hp'),2);assert.equal(run('hoppingSlice.hp'),0);assert.equal(run('milkPopulation()'),2);assert.equal(run('kills'),0);
+    run("var secondHopper=spawn(0,'slice',{x:-60,y:0});secondHopper.sliceGoal='player';secondHopper.speed=100;moveMilkEnemy(secondHopper,.315);moveMilkEnemy(secondHopper,.195)");assert.equal(run('mergeBase.stackCount'),3);assert.equal(run('secondHopper.hp'),0);assert.equal(run('milkPopulation()'),3);
+    run("var cappedHopper=spawn(0,'slice',{x:0,y:0});cappedHopper.sliceGoal='player';moveMilkEnemy(cappedHopper,.315);moveMilkEnemy(cappedHopper,.315)");assert.equal(run('mergeBase.stackCount'),3);assert.equal(run('cappedHopper.hp'),1);assert.equal(run('milkPopulation()'),4);
+    run('player.x=500;moveMilkEnemy(mergeBase,2)');assert.equal(run('mergeBase.stackCount'),2);assert.equal(run('milkPopulation()'),4);
+    run('moveMilkEnemy(mergeBase,1);moveMilkEnemy(mergeBase,.1)');assert.equal(run('mergeBase.stackCount'),1);assert.equal(run('mergeBase.stackAnchor'),false);assert.ok(run('mergeBase.sliceHop'));assert.ok(run('mergeBase.x')>0);assert.equal(run('kills'),0);
+  }
+});
+milkTest('Slice target chances use relative distances, including equal and zero-distance cases',()=>{
+  for(const [playerDistance,bottleDistance,expectedPlayer] of [[8,2,20],[2,8,80],[5,5,50],[0,5,100],[5,0,0],[0,0,50]]){
+    context.playerDistance=playerDistance;context.bottleDistance=bottleDistance;
+    run("enemies=[];milkBottles=[];player.x=playerDistance;player.y=0;spawnMilkBottle({x:-bottleDistance,y:0});var weightedSlice=spawn(0,'slice',{x:0,y:0});var weightedRandom=Math.random;var chosenPlayers=0");
+    try{run("for(let i=0;i<100;i++){weightedSlice.sliceGoal=null;weightedSlice.sliceBottleId=null;Math.random=()=>(i+.5)/100;sliceGoal(weightedSlice);if(weightedSlice.sliceGoal==='player')chosenPlayers++}");assert.equal(run('chosenPlayers'),expectedPlayer);}
+    finally{run('Math.random=weightedRandom');}
+  }
+});
+milkTest('Only landed slices enter bottles, hopping freezes on pause and damage interrupts the hop',()=>{
+  run("enemies=[];milkBottles=[];player.x=300;var hopper=spawn(0,'slice',{x:0,y:0});hopper.sliceGoal='player';moveMilkEnemy(hopper,.2);spawnMilkBottle({x:hopper.x,y:hopper.y});updateMilkClaims(1)");assert.equal(run('hopper.type'),'slice');assert.equal(run('hopper.drinking||0'),0);
+  run('spawnClock=999;var hopPausedAt=hopper.sliceHop.t;pause();update(1)');assert.equal(run('hopper.sliceHop.t'),run('hopPausedAt'));
+  run('pause();hitEnemy(hopper,false)');assert.equal(run('hopper.sliceHop'),null);assert.equal(run('hopper.z'),0);
+});
+milkTest('Milk supplies start with two and add a pair every ten seconds through the survival phase',()=>{
+  assert.equal(run('milkBottles.length'),2);run('enemies=[];player.x=1000;player.y=1000;elapsed=9.99;updateMilkStage(.01,null)');assert.equal(run('milkBottles.length'),2);
+  run('elapsed=10;updateMilkStage(.01,null)');assert.equal(run('milkBottles.length'),4);run('updateMilkStage(.01,null)');assert.equal(run('milkBottles.length'),4);
+  run('elapsed=20;updateMilkStage(.01,null)');assert.equal(run('milkBottles.length'),6);
+  run('elapsed=59;updateMilkStage(.01,null)');assert.equal(run('milkBottles.length'),12);
+  run('beginGiantBattle();elapsed=70;updateMilkStage(.01,null)');assert.equal(run('milkBottles.length'),0);
+});
+milkTest('Straight slice flight locks its overshoot endpoint and uses the original flight speed, including short shots',()=>{
+  for(const [at,x] of [[0,300],[30,10],[50,800]]){
+    context.straightAt=at;context.straightX=x;run("enemies=[];milkBottles=[];elapsed=straightAt;player.x=straightX;player.y=0;var straightSlice=spawn(0,'slice',{x:0,y:0});launchSliceFlight(straightSlice,32);var straightLocked={...straightSlice.sliceFlight}");
+    const distance=run('straightLocked.bx');assert.ok(Math.abs(run('straightLocked.duration')-Math.max(.42,distance/460))<1e-8);
+    run('player.x=-500;player.y=500;moveMilkEnemy(straightSlice,straightLocked.duration*.5)');assert.ok(Math.abs(run('straightSlice.x')-distance*.5)<1e-8);assert.equal(run('straightSlice.y'),0);assert.ok(run('straightSlice.z')<100);
+    run('moveMilkEnemy(straightSlice,straightLocked.duration*.5+.001)');assert.equal(run('straightSlice.sliceFlight'),null);assert.equal(run('straightSlice.x'),run('straightLocked.bx'));assert.equal(run('straightSlice.z'),0);
+  }
+});
+milkTest('Straight projectiles stay inside the arena, freeze on pause and return to normal bottle seeking on landing',()=>{
+  run("enemies=[];milkBottles=[];player.x=1250;player.y=1250;var edgeShot=spawn(0,'slice',{x:1000,y:1000});launchSliceFlight(edgeShot,16)");assert.ok(run('Math.abs(edgeShot.sliceFlight.bx)<=arenaSize-35&&Math.abs(edgeShot.sliceFlight.by)<=arenaSize-35'));
+  run('var straightPaused=edgeShot.sliceFlight.t;pause();update(1)');assert.equal(run('edgeShot.sliceFlight.t'),run('straightPaused'));run('pause();moveMilkEnemy(edgeShot,edgeShot.sliceFlight.duration)');assert.equal(run('edgeShot.sliceFlight'),null);
+  run("spawnMilkBottle({x:edgeShot.x,y:edgeShot.y});edgeShot.sliceGoal='bottle';edgeShot.sliceBottleId=milkBottles[0].id;edgeShot.sliceBottleRevision=milkBottleRevision;updateMilkClaims(.91)");assert.equal(run('edgeShot.type'),'milk');
+});
+milkTest('Offscreen player-seeking slices rally into a pillar and resume straight firing without extra enemies or rewards',()=>{
+  run("enemies=[];milkBottles=[];spawnClock=999;nextMilkAt=999;player.inv=99;serial=0;var rallyBase=spawn(0,'slice',{x:-800,y:0}),rallyA=spawn(0,'slice',{x:-740,y:0}),rallyB=spawn(0,'slice',{x:-680,y:0});for(const e of enemies)e.sliceGoal='player';updateOffscreenSliceRallies()");assert.equal(run('rallyBase.sliceRallyId'),run('rallyBase.id'));assert.equal(run('rallyA.sliceRallyId'),run('rallyBase.id'));
+  run('moveMilkEnemy(rallyA,.1)');assert.ok(run('rallyA.x')< -740);run('moveMilkEnemy(rallyBase,.1)');assert.equal(run('rallyBase.x'),-800);
+  run('for(let i=0;i<300&&(rallyBase.stackCount||1)<3;i++)update(1/60)');assert.equal(run('rallyBase.stackCount'),3);assert.equal(run('milkPopulation()'),3);assert.equal(run('kills'),0);assert.equal(run('charge'),0);
+  run('moveMilkEnemy(rallyBase,2)');assert.ok(run('enemies.some(e=>e.sliceFlight)'));assert.equal(run('milkPopulation()'),3);
+});
+milkTest('Visible slices and bottle seekers are not selected, while already selected groups stay locked when the camera moves',()=>{
+  run("enemies=[];milkBottles=[];var keptBottle=spawnMilkBottle({x:-750,y:0});var visibleRally=spawn(0,'slice',{x:200,y:0}),bottleRally=spawn(0,'slice',{x:-760,y:0}),outsideRally=spawn(0,'slice',{x:-800,y:0});visibleRally.sliceGoal=outsideRally.sliceGoal='player';bottleRally.sliceGoal='bottle';bottleRally.sliceBottleId=keptBottle.id;bottleRally.sliceBottleRevision=milkBottleRevision;updateOffscreenSliceRallies()");assert.equal(run('visibleRally.sliceRallyId'),null);assert.equal(run('bottleRally.sliceRallyId'),null);assert.equal(run('outsideRally.sliceRallyId'),null);
+  run("var secondOutside=spawn(0,'slice',{x:-830,y:0});secondOutside.sliceGoal='player';secondOutside.sliceBottleRevision=milkBottleRevision;outsideRally.sliceGoal='player';outsideRally.sliceBottleRevision=milkBottleRevision;updateOffscreenSliceRallies()");assert.ok(run('outsideRally.sliceRallyId'));run('var chosenRally=outsideRally.sliceRallyId;player.x=-800;updateOffscreenSliceRallies()');assert.equal(run('outsideRally.sliceRallyId'),run('chosenRally'));
+});
+milkTest('Offscreen rallies reserve one group until firing completes and camera or new bottles cannot unlock it',()=>{
+  run("enemies=[];milkBottles=[];elapsed=10;for(let i=0;i<9;i++){const e=spawn(0,'slice',{x:-900-i*30,y:0});e.sliceGoal='player'}updateOffscreenSliceRallies();var firstLockedGroup=sliceRallies[0],firstLockedIds=JSON.stringify(firstLockedGroup.memberIds),lockedBase=enemies.find(e=>e.id===firstLockedGroup.baseId)");assert.equal(run('sliceRallies.length'),1);
+  run('player.x=lockedBase.x;spawnMilkBottle({x:lockedBase.x,y:0});updateOffscreenSliceRallies()');assert.equal(run('sliceRallies[0]'),run('firstLockedGroup'));assert.equal(run('JSON.stringify(sliceRallies[0].memberIds)'),run('firstLockedIds'));assert.ok(run('firstLockedGroup.memberIds.every(id=>{const e=enemies.find(e=>e.id===id);return sliceGoal(e)===player})'));assert.ok(run('recyclableNaturalEnemies().every(e=>!firstLockedGroup.memberIds.includes(e.id))'));
+  run('for(const id of firstLockedGroup.memberIds){const e=enemies.find(e=>e.id===id);e.x=lockedBase.x;e.y=lockedBase.y;e.z=0;e.sliceHop=null}updateOffscreenSliceRallies()');assert.equal(run('lockedBase.stackCount'),3);assert.equal(run('firstLockedGroup.ready'),true);
+  run('moveMilkEnemy(lockedBase,2);updateOffscreenSliceRallies()');assert.equal(run('lockedBase.stackCount'),2);assert.equal(run('sliceRallies[0]'),run('firstLockedGroup'));
+  run('moveMilkEnemy(lockedBase,1);updateOffscreenSliceRallies()');assert.equal(run('lockedBase.stackCount'),1);assert.equal(run('sliceRallies.includes(firstLockedGroup)'),false);
+});
+milkTest('The final ten seconds allow two disjoint locked rallies, while earlier play allows only one',()=>{
+  run("enemies=[];milkBottles=[];elapsed=49.99;for(let i=0;i<9;i++){const e=spawn(0,'slice',{x:-900-i*30,y:0});e.sliceGoal='player'}updateOffscreenSliceRallies()");assert.equal(run('sliceRallies.length'),1);
+  run('elapsed=50;updateOffscreenSliceRallies()');assert.equal(run('sliceRallies.length'),2);assert.equal(run('new Set(sliceRallies.flatMap(g=>g.memberIds)).size'),6);
+  run('updateOffscreenSliceRallies()');assert.equal(run('sliceRallies.length'),2);run('reset()');assert.equal(run('sliceRallies.length'),0);
+});
+milkTest('Stack hits remove one slice without duplicating health or kill rewards',()=>{
+  run('enemies=[];milkBottles=[];var hitStack=spawnSliceStack(0,{x:100,y:0});hitEnemy(hitStack,true)');assert.equal(run('hitStack.hp'),2);assert.equal(run('hitStack.stackCount'),2);assert.equal(run('kills'),1);assert.equal(run('stats.stompKills'),1);assert.equal(run('milkPopulation()'),2);
+  run('hitStack.hit=0;hitEnemy(hitStack,false);hitStack.hit=0;hitEnemy(hitStack,false)');assert.equal(run('hitStack.hp'),0);assert.equal(run('kills'),3);assert.equal(run('peels.length'),0);
+});
+milkTest('Flying slices hurt on contact but cannot be stomped or enter bottles until they land',()=>{
+  run("enemies=[];milkBottles=[];spawnClock=999;player.x=0;spawnMilkBottle({x:0,y:0});var airborneSlice=spawn(0,'slice',{x:0,y:0});launchSliceFlight(airborneSlice,0);airborneSlice.sliceFlight.bx=0;airborneSlice.sliceFlight.by=0;updateMilkClaims(1)");assert.equal(run('airborneSlice.type'),'slice');assert.equal(run('hitEnemy(airborneSlice,true)'),false);
+  run('milkBottles=[];update(.02)');assert.equal(run('player.hp'),4);
+  run('moveMilkEnemy(airborneSlice,airborneSlice.sliceFlight.duration)');assert.equal(run('airborneSlice.sliceFlight'),null);assert.equal(run('hitEnemy(airborneSlice,true)'),true);
+});
+milkTest('Stack shots and deep-green charger windups share charge feedback only while attacks are preparing',()=>{
+  run("enemies=[];var chargedStack=spawnSliceStack(0,{x:300,y:0});chargedStack.stackTime=.5");assert.equal(run('enemyChargeProgress(chargedStack)'),.5);
+  run('chargedStack.stackCount=2;chargedStack.stackTime=2.5;chargedStack.nextSliceShot=3');assert.equal(run('enemyChargeProgress(chargedStack)'),.5);
+  run('chargedStack.stackCount=1;chargedStack.stackAnchor=false');assert.equal(run('enemyChargeProgress(chargedStack)'),null);
+  run("var chargedGreen=spawn(0,'charger',{x:300,y:0});chargedGreen.phase='aim';chargedGreen.phaseTime=.25");assert.equal(run('enemyChargeProgress(chargedGreen)'),.5);
+  for(const phase of ['approach','dash','brake','turn']){context.chargePhase=phase;run('chargedGreen.phase=chargePhase');assert.equal(run('enemyChargeProgress(chargedGreen)'),null);}
+  for(const flag of ['down','knock','hit']){context.chargeFlag=flag;run("chargedGreen.phase='aim';chargedGreen[chargeFlag]=.2");assert.equal(run('enemyChargeProgress(chargedGreen)'),null);run('chargedGreen[chargeFlag]=0');}
+});
+test('Rocket spray has a strong low engine body, follows shared output and cleans up its audio nodes',()=>{
+  run(`var jetAudioSaved={context:audioCtx,output:audioOutput,sound};var jetCaptured=null,jetDisconnects=0,jetPeak=0,jetConnected=false;
+    var jetBus={};audioCtx={currentTime:100,sampleRate:22050,state:'running',
+      createBuffer:(_c,n)=>{const data=new Float32Array(n);return {getChannelData:()=>data}},
+      createBufferSource:()=>{jetCaptured={connect(){},disconnect(){jetDisconnects++},start(){},stop(){}};return jetCaptured},
+      createBiquadFilter:()=>({frequency:{setValueAtTime(){}},connect(){},disconnect(){jetDisconnects++}}),
+      createGain:()=>({gain:{setValueAtTime(v){jetPeak=Math.max(jetPeak,v)},exponentialRampToValueAtTime(v){jetPeak=Math.max(jetPeak,v)}},connect(target){jetConnected=target===jetBus},disconnect(){jetDisconnects++}})
+    };audioOutput={context:audioCtx,input:jetBus};sound=false;lastSfx.delete('milkJet');sfx('milkJet');`);
+  try{
+    assert.equal(run('jetCaptured'),null);run("sound=true;sfx('milkJet')");assert.ok(run('jetConnected'));assert.ok(run('jetPeak')>.08);
+    run(`var jetData=jetCaptured.buffer.getChannelData(0);var jetAmplitude=f=>{let sin=0,cos=0;for(let i=0;i<jetData.length;i++){const a=2*Math.PI*f*i/22050;sin+=jetData[i]*Math.sin(a);cos+=jetData[i]*Math.cos(a)}return 2*Math.hypot(sin,cos)/jetData.length}`);
+    assert.ok(run('jetAmplitude(70)')>.3);assert.ok(run('jetAmplitude(140)')>.1);assert.ok(run('jetAmplitude(3000)')<.04);
+    run('jetCaptured.onended()');assert.equal(run('jetDisconnects'),3);
+  }finally{run("audioCtx=jetAudioSaved.context;audioOutput=jetAudioSaved.output;sound=jetAudioSaved.sound;lastSfx.delete('milkJet')");}
+});
+milkTest('Milk thrust keeps a filled water column and splash without a thin stroked center line',()=>{
+  run("milkPack={ammo:5,spraying:true};player.z=108;var columnMethods={},columnStrokes=0,columnFills=0;for(const key of ['save','restore','createLinearGradient','beginPath','moveTo','bezierCurveTo','quadraticCurveTo','closePath','fill','stroke','ellipse']){columnMethods[key]=ctx[key];ctx[key]=key==='createLinearGradient'?()=>({addColorStop(){}}):key==='stroke'?()=>columnStrokes++:key==='fill'?()=>columnFills++:()=>{}};");
+  try{run('drawPlayerMilkColumn()');assert.equal(run('columnStrokes'),0);assert.ok(run('columnFills')>=6);}finally{run('for(const key in columnMethods)ctx[key]=columnMethods[key]');}
+});
+milkTest('Player milk pulses request the dedicated spray sound and the fuel bar draws no percentage text',()=>{
+  run("milkDrops=[];player.z=108;var savedMilkSfx=sfx;var milkSoundNames=[];sfx=name=>milkSoundNames.push(name);emitPlayerMilkJet();sfx=savedMilkSfx");assert.ok(run("milkSoundNames.includes('milkJet')"));
+  run("var gaugeSaved={};var gaugeText=[];var gaugeWidths=[];for(const key of ['save','restore','translate','beginPath','roundRect','fill','fillRect','fillText']){gaugeSaved[key]=ctx[key];ctx[key]=key==='fillText'?(text)=>gaugeText.push(text):key==='fillRect'?(x,y,w,h)=>gaugeWidths.push(w):()=>{};}milkPack={ammo:2.5};drawMilkAmmo();for(const key in gaugeSaved)ctx[key]=gaugeSaved[key]");assert.equal(run('gaugeText.length'),0);assert.ok(run('gaugeWidths.includes(26)'));
+
+});
+milkTest('Late minion pressure increases hop distance and reduces rest even at the population cap, without affecting giants',()=>{
+  for(const [at,stride,wait] of [[0,60,.5],[30,80,.4],[50,100,.25]]){
+    context.pressureAt=at;run("enemies=[];milkBottles=[];elapsed=pressureAt;player.x=1000;player.y=0;var pressureSlice=spawn(0,'slice',{x:0,y:0});pressureSlice.speed=100;pressureSlice.sliceGoal='player';for(let i=0;i<49;i++)spawn(0,'slice',{x:-1000,y:1000});moveMilkEnemy(pressureSlice,.01)");
+    assert.equal(run('milkPopulation()'),50);assert.equal(run('pressureSlice.sliceHop.bx'),stride);run('moveMilkEnemy(pressureSlice,.63)');assert.equal(run('pressureSlice.sliceHopWait'),wait);assert.equal(run('sliceRules.hopDuration'),.63);
+  }
+  run('enemies=[];beginGiantBattle()');assert.equal(run('milkPressure().hopWait'),.5);assert.equal(run('milkPressure().stride'),.6);
+});
+milkTest('Final ten seconds show the large countdown and hide it during pauses and giant battles',()=>{
+  for(const [at,text,hidden] of [[49.99,'',true],[50,'10',false],[55,'5',false],[59.9,'1',false]]){context.finalAt=at;run('elapsed=finalAt;updateHUD()');assert.equal(element('finalCountdown').textContent,text);assert.equal(element('finalCountdown').hidden,hidden);}
+  run('pause()');assert.equal(element('finalCountdown').hidden,true);run('pause()');assert.equal(element('finalCountdown').hidden,false);
+  run('enemies=[];elapsed=59.99;update(.02);updateHUD()');assert.equal(element('finalCountdown').hidden,true);assert.ok(run('giantBattle'));
+});
+milkTest('Single slices rest on the ground for 0.5 seconds between hops',()=>{
+  run("enemies=[];milkBottles=[];player.x=500;var restingSlice=spawn(0,'slice',{x:0,y:0});restingSlice.sliceGoal='player';restingSlice.speed=100;moveMilkEnemy(restingSlice,.315);moveMilkEnemy(restingSlice,.315);var restX=restingSlice.x");
+  assert.equal(run('restingSlice.sliceHop'),null);assert.equal(run('restingSlice.sliceHopWait'),.5);
+  run('moveMilkEnemy(restingSlice,.2);moveMilkEnemy(restingSlice,.29)');assert.equal(run('restingSlice.x'),run('restX'));assert.equal(run('restingSlice.z'),0);assert.equal(run('restingSlice.sliceHop'),null);
+  run('moveMilkEnemy(restingSlice,.02)');assert.ok(run('restingSlice.sliceHop'));assert.ok(run('restingSlice.x')>run('restX'));
+});
+milkTest('Single slices visibly prepare during the last 0.2 seconds of their grounded rest and stop on takeoff',()=>{
+  run("enemies=[];milkBottles=[];player.x=500;var preparingSlice=spawn(0,'slice',{x:0,y:0});preparingSlice.sliceGoal='player';moveMilkEnemy(preparingSlice,.315);moveMilkEnemy(preparingSlice,.315)");assert.equal(run('sliceHopPreparation(preparingSlice)'),0);
+  run('moveMilkEnemy(preparingSlice,.4)');assert.ok(Math.abs(run('sliceHopPreparation(preparingSlice)')-.5)<1e-8);assert.equal(run('preparingSlice.z'),0);
+  for(const flag of ['down','knock','hit','drinking']){context.prepFlag=flag;run('preparingSlice[prepFlag]=.1');assert.equal(run('sliceHopPreparation(preparingSlice)'),0);run('preparingSlice[prepFlag]=0');}
+  run('moveMilkEnemy(preparingSlice,.11)');assert.ok(run('preparingSlice.sliceHop'));assert.equal(run('sliceHopPreparation(preparingSlice)'),0);
+});
+milkTest('Single slices hop for 0.63 seconds with a fixed stride, and jumping bodies hurt on contact',()=>{
+  run("enemies=[];milkBottles=[];spawnClock=999;player.x=200;var slowHop=spawn(0,'slice',{x:0,y:0});slowHop.sliceGoal='player';slowHop.speed=100;moveMilkEnemy(slowHop,.315)");assert.equal(run('sliceRules.hopDuration'),.63);assert.ok(Math.abs(run('slowHop.z')-48)<1e-8);assert.equal(run('slowHop.sliceHop.bx'),60);run('moveMilkEnemy(slowHop,.315)');assert.equal(run('slowHop.sliceHop'),null);
+  run("enemies=[];player.x=0;player.y=0;player.z=0;var bodyHop=spawn(0,'slice',{x:0,y:0});bodyHop.sliceGoal='player';moveMilkEnemy(bodyHop,.315);update(.01)");assert.equal(run('player.hp'),4);run('update(.01)');assert.equal(run('player.hp'),4);
+});
+milkTest('Straight flying slices sweep contact but respect lateral misses, height and protection',()=>{
+  for(const [y,z,inv,expected] of [[0,0,0,4],[80,0,0,5],[0,300,0,5],[0,0,1,5]]){
+    context.collisionY=y;context.collisionZ=z;context.collisionInv=inv;run("reset();enemies=[];milkBottles=[];spawnClock=999;player.inv=collisionInv;var crossingSlice=spawn(0,'slice',{x:-120,y:collisionY});crossingSlice.z=collisionZ;crossingSlice.sliceFlight={t:0,duration:.1,ax:-120,ay:collisionY,bx:120,by:collisionY,startZ:collisionZ};update(.1)");assert.equal(run('player.hp'),expected);
+  }
+});
+milkTest('Descending onto a hopping slice still stomps safely before contact damage',()=>{
+  run("enemies=[];milkBottles=[];spawnClock=999;player.z=75;player.vz=-100;var stompHop=spawn(0,'slice',{x:0,y:0});stompHop.sliceGoal='player';moveMilkEnemy(stompHop,.315);update(.01)");assert.equal(run('stompHop.hp'),0);assert.equal(run('player.hp'),5);assert.ok(run('player.vz')>0);
+});
+test('Main menu launches either named independent boss battle without debug and retries 蕉片崛起',()=>{
+  run("debugUnlocked=false;$('debugStart').value='120';$('gameMode').value='milk-boss';reset(true)");assert.equal(run('milkStage'),true);assert.equal(run('elapsed'),60);assert.equal(run('liveGiants().length'),2);assert.equal(run('boss'),null);assert.equal(run('boxSequence'),null);assert.equal(run('enemies.length'),0);
+  run('reset(true)');assert.equal(run('liveGiants().length'),2);assert.equal(run('giantBattle.clock'),0);
+  run("$('gameMode').value='boss';reset(true)");assert.equal(run('milkStage'),false);assert.ok(run('boss'));assert.equal(run('giantBattle'),null);assert.equal(run('boxSequence'),null);
+  run("$('gameMode').value='survival';reset()");
+});
+test('Internal milk-boss shortcut launches 蕉片崛起 giants only when debug is unlocked',()=>{
+  for(const mode of ['survival','milk']){
+    context.giantDebugMode=mode;run("debugUnlocked=true;$('gameMode').value=giantDebugMode;$('debugStart').value='milk-boss';reset(true)");assert.equal(run('milkStage'),true);assert.equal(run('elapsed'),60);assert.ok(run('giantBattle'));assert.equal(run('liveGiants().length'),2);assert.equal(run('boxSequence'),null);assert.equal(run('enemies.length'),0);assert.equal(run('boss'),null);
+  }
+  run("debugUnlocked=false;$('gameMode').value='survival';reset()");assert.equal(run('giantBattle'),null);assert.equal(run('milkStage'),false);assert.equal(run('elapsed'),0);run("$('debugStart').value='120';reset()");
+});
+milkTest('Natural spawning reserves a complete stack and reclaims only enough farthest slices at materialization',()=>{
+  run("enemies=[];milkBottles=[];for(let i=0;i<48;i++)spawn(0,'slice',{x:150,y:150});spawnClock=0;elapsed=1;update(.01)");assert.equal(run('milkPopulation()'),48);assert.equal(run('spawnWarnings.length'),1);
+  run('spawnClock=999;updateNaturalArrivals(.81)');assert.equal(run('milkPopulation()'),50);assert.equal(run('enemies.at(-1).stackCount'),3);
+});
+milkTest('Desktop and mobile 蕉片崛起 survive the full sixty-second minion phase',()=>{
+  for(const mobile of [false,true]){
+    context.milkMobile=mobile;run("window.matchMedia=()=>({matches:milkMobile});reset();invincibleMode=true;for(let i=0;i<3601&&state==='playing';i++)update(1/60)");
+    assert.equal(run('state'),'playing');assert.equal(run('boss'),null);assert.ok(run('giantBattle'));assert.ok(run('enemies.length')<=50);assert.ok(run('milkPopulation()')<=50);assert.ok(run('milkBottles.length')<=12);assert.ok(run('milkDrops.length')<100);assert.ok(run('enemies.every(e=>Number.isFinite(e.x)&&Number.isFinite(e.y))'));assert.equal(run('pickups.length'),0);assert.equal(run('surfPickups.length'),0);
+  }
+});
+
+milkTest('蕉片崛起 minion phase transitions to a frozen giant entrance from the first falling parts',()=>{
+  run('elapsed=50;enemies=[];spawnClock=999;update(.01)');assert.equal(run("enemies.some(e=>e.type==='hound')"),false);
+  run("var formerSlice=spawnSliceStack(0,{x:100,y:0});elapsed=59.99;update(.02)");assert.ok(run('isGiantCeremony()'));assert.equal(run('enemies.length'),0);assert.equal(run('giantBattle.fallen.length'),3);assert.equal(run('milkBottles.length'),0);assert.equal(run('milkDrops.length'),0);
+  run("keys.add('d');var assemblyX=player.x;var assemblyMinion=spawn(0,'slice',{x:500,y:500});hurt('assembly');var assemblyTarget=liveGiants()[0];player.giantBoostUntil=99;update(.2)");assert.equal(run('player.x'),run('assemblyX'));assert.equal(run('player.hp'),5);assert.equal(run('hitEnemy(assemblyMinion,true)'),false);assert.equal(run('hitGiant(assemblyTarget)'),false);
+  run('keys.clear();update(3.1)');assert.equal(run('isGiantCeremony()'),false);assert.equal(run('assemblyTarget.forming'),false);
+});
+milkTest('Orbiting pads rotate clockwise, hurt on the ground, and boost descending jumps',()=>{
+  run('enemies=[];beginGiantBattle();updateGiantBattle(4.2);giantBattle.giants=giantBattle.giants.slice(0,1);var orbitGiant=liveGiants()[0];orbitGiant.x=0;orbitGiant.y=0;orbitGiant.angle=0;var orbitBefore=giantPads(orbitGiant)[0];updateGiantBattle(.2);var orbitAfter=giantPads(orbitGiant)[0]');assert.ok(run('orbitAfter.y')>run('orbitBefore.y'));
+  run('player.x=orbitAfter.x;player.y=orbitAfter.y;player.z=0;player.inv=0;giantContacts()');assert.equal(run('player.hp'),4);
+  run('player.down=0;player.z=25;player.vz=-100');assert.equal(run('resolveGiantLanding(35,25)'),true);assert.equal(run('player.vz'),520);assert.ok(run('player.giantBoostUntil')>run('giantBattle.clock'));
+});
+milkTest('Giant shield cycle is six idle, two charge, two out, one return and one recover seconds',()=>{
+  run('enemies=[];beginGiantBattle();updateGiantBattle(4.2);giantBattle.giants=giantBattle.giants.slice(0,1);var attackGiant=liveGiants()[0];attackGiant.x=0;attackGiant.y=0;attackGiant.angle=0;updateGiantAttack(attackGiant,6)');assert.equal(run('attackGiant.attackPhase'),'charge');assert.equal(run('giantPadRadius(attackGiant)'),102);
+  run('var chargeAngle=attackGiant.angle;updateGiantAttack(attackGiant,1)');assert.equal(run('attackGiant.attackPhase'),'charge');assert.ok(run('(attackGiant.angle-chargeAngle+TAU)%TAU')>.55);
+  run('updateGiantAttack(attackGiant,1)');assert.equal(run('attackGiant.attackPhase'),'out');run('updateGiantAttack(attackGiant,1)');assert.ok(Math.abs(run('giantPadRadius(attackGiant)')-216)<1e-6);assert.ok(run('attackGiant.padSweeps.length')>0);
+  run('updateGiantAttack(attackGiant,1)');assert.equal(run('attackGiant.attackPhase'),'return');assert.equal(run('giantPadRadius(attackGiant)'),330);
+  run('updateGiantAttack(attackGiant,.5)');assert.ok(Math.abs(run('giantPadRadius(attackGiant)')-216)<1e-6);assert.equal(run('attackGiant.padSweeps.length'),0);
+  run('updateGiantAttack(attackGiant,.5)');assert.equal(run('attackGiant.attackPhase'),'recover');assert.equal(run('giantPadRadius(attackGiant)'),102);
+  run('updateGiantAttack(attackGiant,1)');assert.equal(run('attackGiant.attackPhase'),'idle');assert.equal(run('attackGiant.attackTime'),0);
+});
+milkTest('Giant body rises out of view, lands at a fixed viewport site, then shields return continuously',()=>{
+  run("enemies=[];beginGiantBattle();updateGiantBattle(4.2);var skyGiant=liveGiants()[0];skyGiant.x=0;skyGiant.y=0;skyGiant.attackPhase='charge';skyGiant.attackTime=1.99;updateGiantAttack(skyGiant,.01);var skySite={...skyGiant.jumpLanding},skyBounds=giantSiteBounds()");
+  assert.ok(run('skySite.x>=skyBounds.left&&skySite.x<=skyBounds.right&&skySite.y>=skyBounds.top&&skySite.y<=skyBounds.bottom'));
+  run('updateGiantAttack(skyGiant,.7);var skyPose=giantBodyPose(skyGiant)');assert.equal(run('skyPose.x'),run('skySite.x'));assert.ok(run('screen(skyPose.x,skyPose.y,skyPose.z).y')<0);
+  run('updateGiantAttack(skyGiant,1.3);var returnPads=giantPads(skyGiant)');assert.equal(run('skyGiant.attackPhase'),'return');assert.equal(run('skyGiant.x'),run('skySite.x'));assert.equal(run('giantBodyPose(skyGiant).z'),0);assert.equal(run('skyGiant.landingImpact'),true);
+  assert.ok(run('returnPads.every(p=>Math.abs(Math.hypot(p.x-skyGiant.jumpLaunch.x,p.y-skyGiant.jumpLaunch.y)-330)<1e-7)'));
+  run('updateGiantAttack(skyGiant,1)');assert.equal(run('skyGiant.attackPhase'),'recover');assert.equal(run('skyGiant.jumpLaunch'),null);assert.ok(run('giantBodyParts(skyGiant).every(p=>p.x===skyGiant.x&&p.y===skyGiant.y)'));
+});
+milkTest('Sky-drop roles follow body count: strongest targets the snapshot, weakest retreats and the third is random',()=>{
+  run('enemies=[];beginGiantBattle();updateGiantBattle(4.2);formGiant();updateGiantBattle(4.2);var roleGiants=liveGiants();roleGiants[0].hp=2;roleGiants[1].hp=1;roleGiants[2].hp=3;player.x=100;player.y=80;roleGiants.forEach(g=>beginGiantSkyDrop(g));var lockedSite={...roleGiants[2].jumpLanding};var roleBounds=giantSiteBounds()');
+  assert.equal(run('roleGiants[2].landingRole'),'chase');assert.equal(run('roleGiants[2].jumpLanding.x'),100);assert.equal(run('roleGiants[2].jumpLanding.y'),80);
+  assert.equal(run('roleGiants[1].landingRole'),'retreat');assert.ok(run('[{x:roleBounds.left,y:roleBounds.top},{x:roleBounds.right,y:roleBounds.top},{x:roleBounds.left,y:roleBounds.bottom},{x:roleBounds.right,y:roleBounds.bottom}].every(p=>dist(p,player)<=dist(roleGiants[1].jumpLanding,player)+1e-8)'));
+  assert.equal(run('roleGiants[0].landingRole'),'random');assert.ok(run('roleGiants[0].jumpLanding.x>=roleBounds.left&&roleGiants[0].jumpLanding.x<=roleBounds.right&&roleGiants[0].jumpLanding.y>=roleBounds.top&&roleGiants[0].jumpLanding.y<=roleBounds.bottom'));
+  run('player.x+=200;player.y+=200');assert.equal(run('roleGiants[2].jumpLanding.x'),100);assert.equal(run('roleGiants[2].jumpLanding.y'),80);
+  run('roleGiants[0].hp=3;roleGiants[2].hp=1;roleGiants.forEach(g=>beginGiantSkyDrop(g))');assert.equal(run('roleGiants[0].landingRole'),'chase');assert.equal(run('roleGiants[2].landingRole'),'retreat');
+});
+milkTest('Equal body counts divide roles by spawn order and a single surviving giant targets the player',()=>{
+  run('enemies=[];beginGiantBattle();updateGiantBattle(4.2);var equalGiants=liveGiants();equalGiants.forEach(g=>beginGiantSkyDrop(g))');assert.equal(run('equalGiants[0].landingRole'),'chase');assert.equal(run('equalGiants[1].landingRole'),'retreat');
+  run('equalGiants[0].hp=0;beginGiantSkyDrop(equalGiants[1])');assert.equal(run('equalGiants[1].landingRole'),'chase');
+});
+milkTest('Airborne bodies cannot be hit from the ground, but landed bodies take ultimate before shield assembly finishes',()=>{
+  run("enemies=[];milkBottles=[];beginGiantBattle();updateGiantBattle(4.2);giantBattle.giants=giantBattle.giants.slice(0,1);var fallingGiant=liveGiants()[0];fallingGiant.x=fallingGiant.y=0;fallingGiant.attackPhase='out';fallingGiant.attackTime=.8;fallingGiant.jumpLaunch={x:0,y:0};fallingGiant.jumpLanding={x:100,y:80};player.x=100;player.y=80;player.z=0;charge=100;activate();special.speed=0;update(.01)");assert.equal(run('fallingGiant.hp'),3);
+  run("special=null;fallingGiant.attackPhase='out';fallingGiant.attackTime=1.99;updateGiantAttack(fallingGiant,.01);player.x=100;player.y=80;player.z=0;player.inv=0;giantContacts()");assert.equal(run('player.hp'),4);
+  run('player.down=0;player.inv=0;player.hp=5;player.giantBoostUntil=giantBattle.clock+2.5;player.vz=-100');assert.equal(run('resolveGiantLanding(120,110)'),false);
+  run('charge=100;activate();special.speed=0;update(.01)');assert.equal(run('fallingGiant.hp'),2);assert.equal(run('player.hp'),5);
+});
+milkTest('Only outward shield travel hurts, including swept paths, while return and jumping safely avoid damage',()=>{
+  run("enemies=[];beginGiantBattle();updateGiantBattle(4.2);giantBattle.giants=giantBattle.giants.slice(0,1);var dangerGiant=liveGiants()[0];dangerGiant.x=0;dangerGiant.y=0;dangerGiant.angle=0;dangerGiant.attackPhase='out';dangerGiant.attackTime=.7;updateGiantAttack(dangerGiant,.15);var shieldSweep=dangerGiant.padSweeps[0];player.x=(shieldSweep.ax+shieldSweep.bx)/2;player.y=(shieldSweep.ay+shieldSweep.by)/2;player.z=0;player.inv=0;giantContacts()");assert.equal(run('player.hp'),4);
+  run('player.inv=0;player.z=140;giantContacts()');assert.equal(run('player.hp'),4);
+  run("dangerGiant.attackPhase='return';dangerGiant.attackTime=.5;updateGiantAttack(dangerGiant,.1);var returningShield=giantPads(dangerGiant)[0];player.x=returningShield.x;player.y=returningShield.y;player.z=0;player.inv=0;giantContacts()");assert.equal(run('player.hp'),4);
+  run("dangerGiant.attackPhase='out';dangerGiant.attackTime=1.99;updateGiantAttack(dangerGiant,.02);var firstReturnPad=giantPads(dangerGiant)[0];player.x=firstReturnPad.x;player.y=firstReturnPad.y;player.z=0;player.inv=0;giantContacts()");assert.equal(run('dangerGiant.attackPhase'),'return');assert.equal(run('player.hp'),4);
+  run("dangerGiant.attackPhase='charge';dangerGiant.attackTime=0;player.x=600;player.y=600;var stillX=dangerGiant.x,stillY=dangerGiant.y;updateGiantBattle(.2)");assert.equal(run('dangerGiant.x'),run('stillX'));assert.equal(run('dangerGiant.y'),run('stillY'));
+  run('pause();var frozenAttack=dangerGiant.attackTime;update(2)');assert.equal(run('dangerGiant.attackTime'),run('frozenAttack'));
+});
+milkTest('Stacked slices and giant heads use the necromancer protected outward bounce without the normal minion rebound overriding it',()=>{
+  for(const mobile of [false,true]){
+    context.bounceMobile=mobile;run("window.matchMedia=()=>({matches:bounceMobile});reset();enemies=[];milkBottles=[];spawnClock=999;player.z=44;player.vz=-120;var bouncingStack=spawnSliceStack(0,{x:0,y:0});update(.02)");assert.equal(run('bouncingStack.hp'),2);assert.equal(run('player.recoil'),.7);assert.equal(run('player.vz'),200);assert.ok(run('player.inv')>=1);assert.equal(run('playerDamageBlink()'),false);assert.ok(Math.abs(run('Math.hypot(player.recoilX,player.recoilY)')-420*(mobile?.7:1))<1e-8);
+    run('var bounceY=player.y;update(.2)');assert.ok(run('player.y')>run('bounceY'));assert.equal(run('player.hp'),5);
+    run('reset();enemies=[];beginGiantBattle();updateGiantBattle(4.2);giantBattle.giants=giantBattle.giants.slice(0,1);var bouncingGiant=liveGiants()[0];player.giantBoostUntil=giantBattle.clock+2;hitGiant(bouncingGiant)');assert.equal(run('player.recoil'),.7);assert.equal(run('player.vz'),200);assert.ok(run('player.inv')>=1);assert.equal(run('playerDamageBlink()'),false);
+  }
+});
+milkTest('Electric walls connect shield edges, defeat normal jump and jet heights, and permit boosted clearance',()=>{
+  run('enemies=[];beginGiantBattle();updateGiantBattle(4.2);giantBattle.giants=giantBattle.giants.slice(0,1);var wallGiant=liveGiants()[0];wallGiant.x=0;wallGiant.y=0;wallGiant.angle=0;player.x=51;player.y=51;player.z=74;player.inv=0;giantContacts()');assert.equal(run('player.hp'),4);
+  run('player.hp=5;player.down=0;player.inv=0;player.z=108;giantContacts()');assert.equal(run('player.hp'),4);
+  run('player.hp=5;player.down=0;player.inv=0;player.giantBoostUntil=giantBattle.clock+2;player.z=140;giantContacts()');assert.equal(run('player.hp'),5);
+  run("wallGiant.attackPhase='return';wallGiant.attackTime=.5;player.z=0;var wallReturn=giantPads(wallGiant);player.x=(wallReturn[0].x+wallReturn[1].x)/2;player.y=(wallReturn[0].y+wallReturn[1].y)/2;giantContacts()");assert.equal(run('player.hp'),5);
+});
+milkTest('Light walls vanish during outgoing shields and return, leaving outgoing pad collision active',()=>{
+  run("enemies=[];beginGiantBattle();updateGiantBattle(4.2);var lightGiant=liveGiants()[0];lightGiant.x=0;lightGiant.y=0;lightGiant.angle=0;lightGiant.attackPhase='out';lightGiant.attackTime=.7;player.inv=0;player.z=0;var lightPads=giantPads(lightGiant);player.x=(lightPads[0].x+lightPads[1].x)/2;player.y=(lightPads[0].y+lightPads[1].y)/2;giantWallContacts(lightGiant)");assert.equal(run('player.hp'),5);assert.equal(run('giantWallsActive(lightGiant)'),false);
+  run('player.x=lightPads[0].x;player.y=lightPads[0].y;giantContacts()');assert.equal(run('player.hp'),4);
+  for(const phase of ['idle','charge','recover','return']){context.wallPhase=phase;run('lightGiant.attackPhase=wallPhase');assert.equal(run('giantWallsActive(lightGiant)'),phase!=='return');}
+});
+milkTest('Ejected body minions spread along three equally separated directions before normal pursuit',()=>{
+  run('enemies=[];milkBottles=[];spawnClock=999;beginGiantBattle();updateGiantBattle(4.2);var spreadGiant=liveGiants()[0];player.giantBoostUntil=giantBattle.clock+2;hitGiant(spreadGiant);var spreadPiece=giantBattle.ejections[0];updateGiantEjections(.85);var spreadChildren=enemies.slice();');
+  assert.equal(run('spreadChildren.length'),3);
+  for(let i=0;i<3;i++)for(let j=i+1;j<3;j++){context.spreadI=i;context.spreadJ=j;assert.ok(Math.abs(run('(spreadChildren[spreadI].kx*spreadChildren[spreadJ].kx+spreadChildren[spreadI].ky*spreadChildren[spreadJ].ky)/(360*360)')+.5)<1e-8);}
+  run('player.inv=99;for(let i=0;i<33;i++)update(1/60)');
+  assert.ok(run('spreadChildren.every(e=>(e.stackCount||1)===1&&Math.hypot(e.x-spreadPiece.bx,e.y-spreadPiece.by)>220)'));
+  assert.ok(run('dist(spreadChildren[0],spreadChildren[1])>390'));
+});
+milkTest('Larger pads can be stomped while rotating and transfer spin-dependent drift to the airborne player',()=>{
+  run('enemies=[];milkBottles=[];spawnClock=999;beginGiantBattle();updateGiantBattle(4.2);giantBattle.giants=giantBattle.giants.slice(0,1);var driftGiant=liveGiants()[0];driftGiant.x=0;driftGiant.y=0;driftGiant.angle=0;player.x=135;player.y=0;player.z=25;player.vz=-100;resolveGiantLanding(35,25);var idleDrift=Math.hypot(player.padDriftX,player.padDriftY)');assert.equal(run('giantRules.padRadius'),36);assert.equal(run('player.vz'),520);assert.ok(run('idleDrift')>0);
+  run('var driftY=player.y;update(.1)');assert.ok(run('player.y')>run('driftY'));
+  run("driftGiant.attackPhase='charge';driftGiant.attackTime=.8;driftGiant.angle=0;player.x=135;player.y=0;player.z=25;player.vz=-100;resolveGiantLanding(35,25)");assert.ok(run('Math.hypot(player.padDriftX,player.padDriftY)')>run('idleDrift'));assert.ok(run('Math.hypot(player.padDriftX,player.padDriftY)')<=240+1e-8);
+});
+milkTest('Protected stomp landings refresh half a second of invincibility before same-frame enemy contact',()=>{
+  run("enemies=[];milkBottles=[];spawnClock=999;player.z=1;player.vz=-50;player.inv=0;player.stompLandingPending=true;spawn(0,'durian',{x:0,y:0}).speed=0;update(.02)");assert.equal(run('player.z'),0);assert.equal(run('player.hp'),5);assert.equal(run('player.inv'),.5);assert.equal(run('playerDamageBlink()'),false);
+  run('update(.49)');assert.equal(run('player.hp'),5);run('update(.02)');assert.equal(run('player.hp'),4);
+  run('reset();enemies=[];milkBottles=[];spawnClock=999;bounceFromStomp({x:-100,y:0},116);for(let i=0;i<100&&player.stompLandingPending;i++)update(1/60)');assert.equal(run('player.stompLandingPending'),false);assert.equal(run('player.z'),0);assert.ok(run('player.inv')>=.5-1e-8);
+});
+milkTest('A normal jump onto a rotating pad can reach and stomp the giant head with real movement physics',()=>{
+  run("enemies=[];milkBottles=[];milkPack=null;spawnClock=999;beginGiantBattle();updateGiantBattle(4.2);giantBattle.giants=giantBattle.giants.slice(0,1);var routeGiant=liveGiants()[0];routeGiant.x=0;routeGiant.y=0;routeGiant.angle=0;player.x=168;player.y=0;player.inv=0;player.giantBoostUntil=0;jump();keys.add('a');keys.add('s');for(let i=0;i<18;i++)update(1/60);keys.clear();for(let i=0;i<60&&(player.giantBoostUntil||0)<=giantBattle.clock;i++)update(1/60)");
+  assert.ok(run('player.giantBoostUntil')>run('giantBattle.clock'));assert.equal(run('player.hp'),5);
+  run("for(let i=0;i<100&&routeGiant.hp===3;i++){var routeDistance=Math.hypot(player.x,player.y);stick.x=routeDistance>20?-player.x/routeDistance:0;stick.y=routeDistance>20?-player.y/routeDistance:0;update(1/60)}stick.x=stick.y=0");assert.equal(run('routeGiant.hp'),2);assert.equal(run('player.hp'),5);
+});
+milkTest('Higher shield bounce gives extra aiming time and retains head eligibility through descent',()=>{
+  run("enemies=[];milkBottles=[];milkPack=null;spawnClock=999;beginGiantBattle();updateGiantBattle(4.2);giantBattle.giants=giantBattle.giants.slice(0,1);var highGiant=liveGiants()[0];highGiant.x=0;highGiant.y=0;highGiant.angle=0;player.x=102;player.y=0;player.z=25;player.vz=-100;resolveGiantLanding(35,25);var highBoostStart=giantBattle.clock;var highPeak=player.z;for(let i=0;i<18;i++){update(1/60);highPeak=Math.max(highPeak,player.z)}");
+  assert.ok(run('player.z')>140);assert.ok(run('player.vz')>0);assert.ok(Math.abs(run('player.giantBoostUntil-highBoostStart')-2.5)<1e-8);
+  run("for(let i=0;i<100&&highGiant.hp===3;i++){var aimDistance=Math.hypot(player.x,player.y);stick.x=aimDistance>10?-player.x/aimDistance:0;stick.y=aimDistance>10?-player.y/aimDistance:0;update(1/60);highPeak=Math.max(highPeak,player.z)}stick.x=stick.y=0");
+  assert.ok(run('highPeak')>180);assert.ok(run('giantBattle.clock-highBoostStart')>.9);assert.equal(run('highGiant.hp'),2);assert.equal(run('player.hp'),5);
+});
+milkTest('Ultimate is blocked during initial entrance, then damages a giant once per cast without stomp rewards',()=>{
+  run('enemies=[];milkBottles=[];milkPack=null;spawnClock=999;beginGiantBattle();var ultimateGiant=liveGiants()[0]');assert.equal(run('hitGiant(ultimateGiant,false)'),false);run('ultimateGiant.hp=3;ultimateGiant.hit=0;giantBattle.ejections=[]');
+  run('updateGiantBattle(4.2);giantBattle.giants=giantBattle.giants.slice(0,1);ultimateGiant.x=0;ultimateGiant.y=0;player.x=-160;player.y=0;player.face=0;charge=100;activate();update(.2)');assert.equal(run('ultimateGiant.hp'),2);assert.equal(run('charge'),0);assert.equal(run('player.recoil'),0);assert.equal(run('stats.stompHits'),0);assert.ok(run('special.hits.has(ultimateGiant)'));
+  run('ultimateGiant.hit=0;special.speed=0;update(.1)');assert.equal(run('ultimateGiant.hp'),2);
+  run('updateGiantEjections(.85)');assert.ok(run('enemies.every(e=>special.hits.has(e.id))'));assert.equal(run('enemies.length'),3);
+});
+milkTest('Ultimate still hits a landed reinforcement body before its assembly finishes',()=>{
+  run("enemies=[];milkBottles=[];beginGiantBattle();updateGiantBattle(4.2);formGiant({x:0,y:200},false);var assemblingTarget=liveGiants().at(-1);giantBattle.formations.forEach(f=>f.time=1.1);player.x=assemblingTarget.x;player.y=assemblingTarget.y;player.face=0;charge=100;activate();special.speed=0;update(.01)");assert.equal(run('assemblingTarget.forming'),true);assert.equal(run('assemblingTarget.hp'),2);assert.equal(run('player.hp'),5);
+});
+milkTest('Ultimate can finish a giant, while surfing still cannot damage its body',()=>{
+  run('enemies=[];milkBottles=[];milkPack=null;spawnClock=999;beginGiantBattle();updateGiantBattle(4.2);giantBattle.giants=giantBattle.giants.slice(0,1);var surfGiant=liveGiants()[0];surfGiant.x=0;surfGiant.y=0;player.x=-160;player.y=0;player.face=0;surfStock=1;activateSurf();update(.2)');assert.equal(run('surfGiant.hp'),3);
+  run('special=null;surfGiant.hp=1;player.x=-160;player.y=0;player.face=0;charge=100;activate();update(.2)');assert.equal(run('surfGiant.hp'),0);assert.equal(run('kills'),1);assert.equal(run('stats.stompKills'),0);
+  run('updateGiantEjections(.85);updateGiantBattle(.01)');assert.equal(run('state'),'over');
+});
+milkTest('Head landing tolerance catches a boosted descent behind the visible head but excludes ground and distant landings',()=>{
+  run('enemies=[];milkBottles=[];beginGiantBattle();updateGiantBattle(4.2);giantBattle.giants=giantBattle.giants.slice(0,1);var forgivingGiant=liveGiants()[0];forgivingGiant.x=0;forgivingGiant.y=0;player.x=0;player.y=-55;player.z=115;player.vz=-100;player.giantBoostUntil=giantBattle.clock+2.5');assert.equal(run('resolveGiantLanding(120,115)'),true);assert.equal(run('forgivingGiant.hp'),2);assert.equal(run('player.hp'),5);
+  run('forgivingGiant.hit=0;player.recoil=0;player.giantBoostUntil=0;player.vz=-100');assert.equal(run('resolveGiantLanding(85,80)'),false);assert.equal(run('forgivingGiant.hp'),2);
+  run('player.giantBoostUntil=giantBattle.clock+2.5;player.y=-80');assert.equal(run('inGiantHeadLanding(forgivingGiant)'),false);assert.equal(run('resolveGiantLanding(85,80)'),false);
+});
+milkTest('Head requires a fresh pad boost, loses one body per stomp, and ejects three minions per body',()=>{
+  run('enemies=[];beginGiantBattle();updateGiantBattle(4.2);giantBattle.giants=giantBattle.giants.slice(0,1);var hpGiant=liveGiants()[0];player.giantBoostUntil=0');assert.equal(run('hitGiant(hpGiant)'),false);
+  for(let hit=0;hit<3;hit++){
+    run('hpGiant.hit=0;player.giantBoostUntil=giantBattle.clock+2');assert.equal(run('hitGiant(hpGiant)'),true);assert.equal(run('hpGiant.hp'),2-hit);assert.equal(run('hitGiant(hpGiant)'),false);
+    run('updateGiantEjections(.86)');assert.equal(run("enemies.filter(e=>e.hp>0&&e.type==='slice').length"),(hit+1)*3);
+  }
+  run('updateGiantBattle(.01)');assert.equal(run('state'),'over');assert.ok(run('enemies.length')>=9);assert.ok(element('overlayTitle').innerHTML.includes('香蕉片巨人擊破'));
+});
+milkTest('Two giants open left and right, ten-second single-piece reinforcements preserve old combat and the three-giant cap',()=>{
+  run('enemies=[];beginGiantBattle()');assert.equal(run('liveGiants().length'),2);assert.ok(run('liveGiants()[0].x<player.x'));assert.ok(run('liveGiants()[1].x>player.x'));assert.equal(run('giantBattle.formations.length'),2);
+  run('updateGiantBattle(4.2);updateGiantBattle(6.8)');assert.equal(run('liveGiants().length'),3);assert.equal(run('giantBattle.formations.length'),1);assert.equal(run('isGiantCeremony()'),false);
+  run("var oldCombatGiant=liveGiants()[0],newCombatGiant=liveGiants()[2];oldCombatGiant.attackPhase='idle';oldCombatGiant.attackTime=0;var oldCombatClock=oldCombatGiant.attackTime;player.inv=0;var combatMinion=spawn(0,'slice',{x:600,y:600});hurt('reinforcement combat');player.giantBoostUntil=giantBattle.clock+2");assert.equal(run('player.hp'),4);assert.equal(run('hitEnemy(combatMinion,false)'),true);assert.equal(run('hitGiant(newCombatGiant)'),false);assert.equal(run('hitGiant(oldCombatGiant)'),true);
+  run('updateGiantBattle(.2)');assert.ok(run('oldCombatGiant.attackTime')>run('oldCombatClock'));assert.equal(run('newCombatGiant.forming'),true);
+  run('updateGiantBattle(3);updateGiantBattle(16.8)');assert.equal(run('liveGiants().length'),3);
+  run('giantBattle.formations=[];giantBattle.giants.forEach(g=>g.hp=0);giantBattle.ejections=[];updateGiantBattle(10)');assert.equal(run('state'),'over');assert.equal(run('liveGiants().length'),0);
+});
+milkTest('Untouched giants get one new body piece every ten seconds and stop at three full giants',()=>{
+  run('enemies=[];beginGiantBattle();updateGiantBattle(4.2);updateGiantBattle(6.8);var growingGiant=liveGiants()[2]');assert.equal(run('growingGiant.hp'),1);assert.equal(run('giantBattle.formations[0].parts.filter(p=>p.index<3).length'),1);
+  run('updateGiantBattle(10)');assert.equal(run('giantBattle.supplies.length'),1);assert.equal(run('growingGiant.hp'),1);run('updateGiantBattle(1)');assert.equal(run('growingGiant.hp'),2);
+  run('updateGiantBattle(9);updateGiantBattle(1)');assert.equal(run('growingGiant.hp'),3);
+  run('updateGiantBattle(9)');assert.equal(run('liveGiants().length'),3);assert.equal(run('giantBattle.supplies.length'),0);assert.equal(run('giantBattle.formations.length'),0);assert.ok(run('liveGiants().every(g=>g.hp===3)'));
+});
+milkTest('Single-piece supply prioritizes the lowest living body count without freezing existing combat',()=>{
+  run('enemies=[];beginGiantBattle();updateGiantBattle(4.2);var repairA=liveGiants()[0],repairB=liveGiants()[1];repairA.hp=2;repairB.hp=1;updateGiantBattle(6.8)');assert.equal(run('liveGiants().length'),2);assert.equal(run('giantBattle.supplies[0].g'),run('repairB'));assert.equal(run('isGiantCeremony()'),false);
+  run("player.inv=0;hurt('during supply');var repairClock=repairA.attackTime;updateGiantBattle(.2)");assert.equal(run('player.hp'),4);assert.ok(run('repairA.attackTime!==repairClock'));run('updateGiantBattle(.8)');assert.equal(run('repairB.hp'),2);assert.equal(run('repairA.hp'),2);assert.ok(Math.abs(run('repairB.refillUntil-giantBattle.clock')-.7)<1e-8);
+  run('repairA.hp=1;giantBattle.clock=19.99;updateGiantBattle(.02)');assert.equal(run('giantBattle.supplies[0].g'),run('repairA'));
+  run('repairA.hp=0;updateGiantBattle(1)');assert.equal(run('repairA.hp'),0);assert.equal(run('giantBattle.supplies.length'),0);
+});
+milkTest('Both boss names last one second and the giant name freezes player actions and world simulation',()=>{
+  run("enemies=[];beginGiantBattle();updateGiantBattle(3.2);updateHUD();var titlePlayer=JSON.stringify(player),titleAngle=liveGiants()[0].angle;keys.add('d');charge=100;surfStock=1;jump();activate();activateSurf();hurt('title')");assert.equal(run('bossNameDuration'),1);assert.equal(run('isGiantNameEntrance()'),true);assert.equal(run('special'),null);assert.equal(run('JSON.stringify(player)'),run('titlePlayer'));
+  run('update(.99)');assert.equal(element('bossBanner').hidden,false);assert.equal(run('JSON.stringify(player)'),run('titlePlayer'));assert.equal(run('liveGiants()[0].angle'),run('titleAngle'));run('update(.02)');assert.equal(element('bossBanner').hidden,true);assert.equal(run('keys.size'),0);assert.equal(run('giantHintPads().length'),8);
+  run("keys.add('d');update(.1)");assert.ok(run('player.x')>0);
+  run("$('gameMode').value='boss';reset();updateBossEntrance(4)");assert.equal(run('boss.phase'),'entrance-banner');assert.equal(run('boss.time'),1);run('updateBossEntrance(.99)');assert.equal(element('bossBanner').hidden,false);run('updateBossEntrance(.02)');assert.equal(element('bossBanner').hidden,true);
+});
+milkTest('Giant title appears once after assembly, freezes on pause and restores the necromancer title after switching',()=>{
+  run('enemies=[];beginGiantBattle();updateHUD()');assert.equal(element('bossBanner').hidden,true);
+  run('updateGiantBattle(3.4);updateHUD()');assert.equal(element('bossBanner').hidden,false);assert.equal(element('bossBannerTitle').textContent,'進擊的蕉巨');assert.ok(Number(element('bossBanner').style.opacity)>0);
+  run('pause();update(1);updateHUD()');assert.equal(element('bossBanner').hidden,false);assert.equal(run('giantBattle.clock'),3.4);run('pause();mobilePlayBlocked=true;update(1)');assert.equal(run('giantBattle.clock'),3.4);
+  run('mobilePlayBlocked=false;updateGiantBattle(.81);updateHUD()');assert.equal(element('bossBanner').hidden,true);run('updateGiantBattle(6);updateHUD()');assert.equal(element('bossBanner').hidden,true);
+  run("$('gameMode').value='boss';reset();boss.phase='entrance-banner';boss.time=.6;updateHUD()");assert.equal(element('bossBanner').hidden,false);assert.equal(element('bossBannerTitle').textContent,'腐蕉大法師');run('reset()');
+});
+milkTest('All eight opening pads have upward hints that flash for five seconds and reinforcements do not restart them',()=>{
+  run("enemies=[];notify('before giant');beginGiantBattle()");assert.equal(element('notice').textContent,'');assert.equal(run('giantHintActive()'),false);
+  run('updateGiantBattle(4.2)');assert.equal(run('giantHintActive()'),true);assert.equal(run('giantHintPads().length'),8);run('var hintBright=giantHintOpacity();giantBattle.clock+=.25;var hintDim=giantHintOpacity();giantBattle.clock-=.25;giantBattle.taught=true');assert.ok(run('hintBright>hintDim*4'));assert.equal(run('giantHintPads().length'),8);assert.equal(element('notice').textContent,'');
+  run('updateGiantBattle(4.99)');assert.equal(run('giantHintActive()'),true);run('updateGiantBattle(.02)');assert.equal(run('giantHintActive()'),false);assert.equal(run('giantHintPads().length'),0);
+  run('updateGiantBattle(1.8)');assert.equal(run('giantHintActive()'),false);assert.equal(element('notice').textContent,'');
+});
+milkTest('Giant combat uses only short hit feedback and suppresses central status notices',()=>{
+  run("enemies=[];beginGiantBattle();updateGiantBattle(4.2);notify('skill or damage status');texts=[];var silentGiant=liveGiants()[0];hitGiant(silentGiant,false)");assert.equal(element('notice').textContent,'');assert.equal(run('texts.length'),1);assert.equal(run('texts[0].text'),'命中！');assert.equal(run('texts[0].life'),.65);
+  run('silentGiant.hit=0;silentGiant.hp=1;hitGiant(silentGiant,false)');assert.ok(run("texts.every(t=>t.text==='命中！')"));assert.equal(element('notice').textContent,'');
+  run("reset();notify('normal stage status')");assert.equal(element('notice').textContent,'normal stage status');
+});
+milkTest('Boss HUD counts elapsed minutes and seconds through pauses and resets, while survival keeps counting down',()=>{
+  run('enemies=[];beginGiantBattle();updateHUD()');assert.equal(element('bossTimer').textContent,'00:00');assert.equal(element('gameClock').hidden,true);assert.equal(element('bossHud').hidden,true);
+  run('giantBattle.clock=65.9;updateHUD()');assert.equal(element('bossTimer').textContent,'01:05');assert.equal(element('finalCountdown').hidden,true);assert.equal(element('gameClock').hidden,true);assert.equal(element('bossHud').hidden,true);assert.equal(element('bossClock').hidden,false);
+  run('pause();update(5);updateHUD()');assert.equal(element('bossTimer').textContent,'01:05');run('pause();mobilePlayBlocked=true;update(5);updateHUD()');assert.equal(element('bossTimer').textContent,'01:05');
+  run('mobilePlayBlocked=false;reset();updateHUD()');assert.equal(element('gameClock').hidden,false);assert.equal(element('timer').textContent,'01:00');run("$('gameMode').value='survival';reset();startBossBattle();bossElapsed=72.8;updateHUD()");assert.equal(element('bossTimer').textContent,'01:12');assert.equal(element('bossHud').hidden,false);assert.equal(element('gameClock').hidden,true);assert.equal(element('bossClock').hidden,false);assert.equal(element('finalCountdown').hidden,true);
+});
+milkTest('Initial giant arrival freezes actions from time zero through assembly and title, while later formations do not',()=>{
+  run("enemies=[];keys.add('d');beginGiantBattle();var firstArrivalPlayer=JSON.stringify(player);charge=100;surfStock=1;keys.add('d');jump();activate();activateSurf();hurt('arrival');update(.5)");assert.equal(run('JSON.stringify(player)'),run('firstArrivalPlayer'));assert.equal(run('special'),null);assert.equal(run('isBossWorldFrozen()'),true);assert.equal(run('giantBattle.formations[0].time'),.5);
+  run('update(2.7)');assert.equal(run('isGiantCeremony()'),false);assert.equal(run('isGiantNameEntrance()'),true);assert.equal(run('JSON.stringify(player)'),run('firstArrivalPlayer'));run('update(1)');assert.equal(run('isBossWorldFrozen()'),false);assert.equal(run('keys.size'),0);
+  run("formGiant({x:500,y:300},false);keys.add('d');update(.1)");assert.ok(run('player.x')>0);assert.equal(run('isBossWorldFrozen()'),false);
+});
+milkTest('Descending arrival beams apply to both opening giants and new giants, while simple healing keeps its basic glow',()=>{
+  run('enemies=[];beginGiantBattle();var beamMethods={beam:drawGiantFormationBeam,slice:drawGiantSlice,supply:drawGiantSupplyGlow,hints:drawGiantHints},arrivalBeams=0,basicGlows=0;drawGiantFormationBeam=()=>arrivalBeams++;drawGiantSlice=()=>{};drawGiantSupplyGlow=()=>basicGlows++;drawGiantHints=()=>{}');
+  try{
+    run('drawGiantEffects()');assert.equal(run('arrivalBeams'),2);assert.equal(run('basicGlows'),0);
+    run('var beamPoseForm=giantBattle.formations[0];beamPoseForm.time=.1');assert.ok(run('giantFormationBeamPose(beamPoseForm).progress')<1);run('beamPoseForm.time=.35');assert.equal(run('giantFormationBeamPose(beamPoseForm).progress'),1);run('beamPoseForm.time=1.91');assert.equal(run('giantFormationBeamPose(beamPoseForm).alpha'),0);
+    run('updateGiantBattle(4.2);formGiant({x:500,y:300},false);arrivalBeams=0;drawGiantEffects()');assert.equal(run('arrivalBeams'),1);
+    run('giantBattle.formations=[];giantBattle.supplies=[{g:liveGiants()[0],time:.3}];arrivalBeams=0;basicGlows=0;drawGiantEffects()');assert.equal(run('arrivalBeams'),0);assert.equal(run('basicGlows'),1);
+  }finally{run('drawGiantFormationBeam=beamMethods.beam;drawGiantSlice=beamMethods.slice;drawGiantSupplyGlow=beamMethods.supply;drawGiantHints=beamMethods.hints');}
+});
+milkTest('Opening giant parts form separate left and right groups around their own assembly sites',()=>{
+  run('enemies=[];beginGiantBattle();var leftGroup=giantBattle.formations[0],rightGroup=giantBattle.formations[1]');
+  assert.ok(run('leftGroup.parts.every(p=>p.x<player.x&&p.x===leftGroup.g.x&&p.y===leftGroup.g.y)'));
+  assert.ok(run('rightGroup.parts.every(p=>p.x>player.x&&p.x===rightGroup.g.x&&p.y===rightGroup.g.y)'));
+  assert.equal(run('leftGroup.parts.length+rightGroup.parts.length'),14);
+});
+milkTest('Every giant part lands at one shared point before spreading into body layers and shields',()=>{
+  run('enemies=[];beginGiantBattle();var assembledForm=giantBattle.formations[0];assembledForm.time=1.1');
+  assert.ok(run('assembledForm.parts.every(part=>{const p=giantPartPose(assembledForm,part);return p.x===assembledForm.g.x&&p.y===assembledForm.g.y&&p.z===0})'));
+  run('assembledForm.time=2.9');
+  assert.ok(run('assembledForm.parts.every(part=>{const p=giantPartPose(assembledForm,part),target=part.index<3?assembledForm.g:giantPads(assembledForm.g)[part.index-3];return Math.abs(p.x-target.x)<1e-8&&Math.abs(p.y-target.y)<1e-8})'));
+  assert.ok(Math.abs(run('giantPartPose(assembledForm,assembledForm.parts[2]).z')-68)<1e-8);
+});
+milkTest('Assembly draws rear shields behind the body and keeps the head visible when parts share one landing point',()=>{
+  run('enemies=[];beginGiantBattle();giantBattle.formations=giantBattle.formations.slice(0,1);var depthForm=giantBattle.formations[0];depthForm.time=1.1;var assemblyDraws=[];var originalFormationBeam=drawGiantFormationBeam;drawGiantFormationBeam=()=>{};var originalGiantDraw=drawGiantSlice;drawGiantSlice=(sprite,width,height,x,y,z)=>assemblyDraws.push({width,height,x,y,z});');
+  try{
+    run('drawGiantEffects()');assert.equal(run('assemblyDraws.length'),7);assert.ok(run('assemblyDraws.slice(0,4).every(p=>p.width===96)'));assert.equal(run('assemblyDraws[6].height'),94);
+    for(const angle of [0,1,2,3,4,5]){context.depthAngle=angle;run('depthForm.g.angle=depthAngle;depthForm.time=2.3;assemblyDraws=[];drawGiantEffects();var headDrawIndex=assemblyDraws.findIndex(p=>p.height===94)');assert.ok(run('assemblyDraws.every((p,i)=>p.width!==96||p.y>=depthForm.g.y||i<headDrawIndex)'));}
+  }finally{run('drawGiantSlice=originalGiantDraw;drawGiantFormationBeam=originalFormationBeam');}
+});
+milkTest('Reinforcements maximize distance to the nearest giant within the visible assembly bounds',()=>{
+  run('enemies=[];beginGiantBattle();var siteA=liveGiants()[0],siteB=liveGiants()[1];siteA.x=-200;siteA.y=-100;siteB.x=200;siteB.y=-100;var farSite=giantSite(),siteBounds=giantSiteBounds();');
+  assert.equal(run('farSite.x'),0);assert.equal(run('farSite.y'),run('siteBounds.bottom'));
+  for(const position of [{x:0,y:0},{x:1250,y:1250},{x:-1250,y:-1250}]){
+    context.sitePlayerPosition=position;run('player.x=sitePlayerPosition.x;player.y=sitePlayerPosition.y;siteA.x=player.x-150;siteA.y=player.y+50;siteB.x=player.x+180;siteB.y=player.y-90;farSite=giantSite();siteBounds=giantSiteBounds();var siteScore=Math.min(...liveGiants().map(g=>dist(g,farSite)));');
+    assert.ok(run('farSite.x>=siteBounds.left&&farSite.x<=siteBounds.right&&farSite.y>=siteBounds.top&&farSite.y<=siteBounds.bottom'));
+    assert.ok(run('screen(farSite.x,farSite.y).x>=0&&screen(farSite.x,farSite.y).x<=W&&screen(farSite.x,farSite.y).y>=0&&screen(farSite.x,farSite.y).y<=H'));
+    assert.ok(run('Array.from({length:21},(_,i)=>Array.from({length:21},(_,j)=>({x:siteBounds.left+(siteBounds.right-siteBounds.left)*i/20,y:siteBounds.top+(siteBounds.bottom-siteBounds.top)*j/20}))).flat().every(p=>Math.min(...liveGiants().map(g=>dist(g,p)))<=siteScore+1e-7)'));
+  }
+  run('formGiant();var newSiteForm=giantBattle.formations[2]');assert.ok(run('newSiteForm.parts.every(p=>p.x===newSiteForm.g.x&&p.y===newSiteForm.g.y)'));
+});
+milkTest('Pause, phone gate and restart preserve or clear giant state, while 蕉皮末日 reaches its own necromancer',()=>{
+  run('enemies=[];beginGiantBattle();pause();var giantPausedAt=giantBattle.clock;update(10)');assert.equal(run('giantBattle.clock'),run('giantPausedAt'));
+  run('pause();mobilePlayBlocked=true;update(10)');assert.equal(run('giantBattle.clock'),run('giantPausedAt'));
+  run('mobilePlayBlocked=false;reset()');assert.equal(run('giantBattle'),null);
+  run("$('gameMode').value='survival';reset();enemies=[];elapsed=119.99;update(.02)");assert.ok(run('boss'));assert.equal(run('giantBattle'),null);
+});
+
+test('Both normal round entries drop a case before spawning enemies or advancing the clock',()=>{
+  for(const mode of ['milk','survival']){
+    context.boxTestMode=mode;run("$('gameMode').value=boxTestMode;debugUnlocked=false;reset(true)");assert.equal(run('boxSequence.kind'),'entrance');assert.equal(run('elapsed'),0);assert.equal(run('enemies.length'),0);assert.equal(run('milkBottles.length'),0);
+    run("charge=100;surfStock=1;jump();activate();activateSurf();hurt('during entrance');keys.add('d');update(.6)");assert.equal(run('player.hp'),5);assert.equal(run('player.x'),0);assert.equal(run('player.z'),0);assert.equal(run('special'),null);assert.equal(run('surfStock'),1);assert.equal(run('elapsed'),0);
+    run('update(1.79)');assert.ok(run('boxSequence'));assert.equal(run('enemies.length'),0);
+    run('update(.02)');assert.equal(run('boxSequence'),null);assert.equal(run('enemies.length'),mode==='milk'?2:7);assert.equal(run('elapsed'),0);assert.equal(run('keys.size'),0);assert.equal(run('milkBottles.length'),mode==='milk'?2:0);
+    run('update(.1)');assert.ok(run('elapsed')>0);
+  }
+  run("$('gameMode').value='survival';reset()");
+});
+test('Entrance holy light reaches the sky and fades completely before the original hero jumps out',()=>{
+  run('var launchAt=boxRules.dropDuration+boxRules.launchDelay');assert.ok(Math.abs(run('boxRules.dropDuration')-1.3/1.5)<1e-9);
+  for(const offset of [.08,.16,.3,.45]){
+    context.lightOffset=offset;run("var lightPose=entrancePose({kind:'entrance',time:boxRules.dropDuration+lightOffset})");assert.equal(run('lightPose.heroAlpha'),0);assert.equal(run('lightPose.open'),offset>=.12?1:0);assert.ok(run('lightPose.beamAlpha')>0);if(offset>=.16)assert.equal(run('lightPose.beamRise'),1);
+  }
+  run("var emergePose=entrancePose({kind:'entrance',time:launchAt}),endedPose=entrancePose({kind:'entrance',time:boxRules.entranceDuration})");assert.equal(run('emergePose.beamAlpha'),0);assert.equal(run('emergePose.heroAlpha'),1);assert.equal(run('emergePose.open'),1);assert.equal(run('endedPose.heroZ'),0);assert.equal(run('endedPose.caseAlpha'),0);
+});
+test('Holy light fully conceals the case while its artwork changes from closed to open',()=>{
+  for(const delta of [.11,.12,.2,.3]){context.coverDelta=delta;run("var coveredPose=entrancePose({kind:'entrance',time:boxRules.dropDuration+coverDelta})");assert.equal(run('coveredPose.beamCover'),1);}
+  run("var revealedPose=entrancePose({kind:'entrance',time:boxRules.dropDuration+.55})");assert.ok(run('revealedPose.beamCover')<1e-8);
+});
+test('Desktop Space starts and retries once, respects loading, result delay and form controls',()=>{
+  run("$('gameMode').value='milk';debugUnlocked=false;state='intro';$('start').disabled=false;var savedShortcutReset=reset;reset=productionReset;var shortcutEvent={code:'Space',key:' ',repeat:false,preventDefault(){}};handleKeyDown(shortcutEvent)");
+  assert.equal(run('state'),'playing');assert.ok(run('boxSequence'));assert.equal(run('player.vz'),0);assert.equal(run("keys.has(' ')"),false);
+  run('boxSequence.time=.2;handleKeyDown({...shortcutEvent,repeat:true})');assert.equal(run('boxSequence.time'),.2);
+  run('finish(false);handleKeyDown(shortcutEvent)');assert.equal(run('state'),'over');assert.equal(run('endElapsed'),0);
+  run('tickEnding(2)');assert.ok(element('keyboardStartHint').textContent.includes('SPACE'));run('handleKeyDown({...shortcutEvent,repeat:true})');assert.equal(run('state'),'over');
+  run('handleKeyDown(shortcutEvent)');assert.equal(run('state'),'playing');assert.equal(run('boxSequence.time'),0);
+  run("boxSequence=null;state='intro';assetsReady=false;handleKeyDown(shortcutEvent)");assert.equal(run('state'),'intro');run("assetsReady=true;handleKeyDown({...shortcutEvent,target:{tagName:'SELECT'}})");assert.equal(run('state'),'intro');
+  run('reset=savedShortcutReset;reset()');
+});
+test('Pause and phone gate freeze case animation, while restarting resets the entrance',()=>{
+  run("$('gameMode').value='milk';reset(true);update(.3);pause();update(2)");assert.equal(run('boxSequence.time'),.3);assert.equal(run('elapsed'),0);
+  run('pause();mobilePlayBlocked=true;update(2)');assert.equal(run('boxSequence.time'),.3);
+  run('mobilePlayBlocked=false;reset(true)');assert.equal(run('boxSequence.time'),0);
+  run("$('gameMode').value='survival';reset()");
+});
+test('Boss and debug entries preserve their existing entrance and skip the falling case',()=>{
+  run("$('gameMode').value='boss';reset(true)");assert.equal(run('boxSequence'),null);assert.equal(run('isBossEntrance()'),true);
+  run("$('gameMode').value='survival';debugUnlocked=true;$('debugStart').value='32';reset(true)");assert.equal(run('boxSequence'),null);assert.equal(run('elapsed'),88);assert.equal(run('enemies.length'),7);
+  run("debugUnlocked=false;$('debugStart').value='120';reset()");
+});
+test('Both stages continue through thirty seconds remaining without a rest case, healing or charge refill',()=>{
+  for(const mode of ['milk','survival']){
+    context.noRestMode=mode;
+    run("$('gameMode').value=noRestMode;reset();enemies=[];spawnClock=999;nextPickupAt=999;nextSurfAt=999;nextDurianAt=999;nextChargerAt=999;nextThrowerAt=999;elapsed=roundDuration()-30.01;player.hp=2;charge=30;player.inv=99");
+    const before=run('elapsed');run('update(.02);update(.7)');
+    assert.equal(run('boxSequence'),null);assert.equal(run('player.hp'),2);assert.equal(run('charge'),30);assert.ok(run('elapsed')>before+.7);
+    assert.doesNotMatch(element('notice').textContent,/進盒休息|休息完成|香蕉盒降臨/);
+  }
+  run("$('gameMode').value='survival';reset()");
+});
+
+test('Skill exit and banana bunch grant half a second of protection without damage flashing',()=>{
+  for(const skill of ['dash','surf']){
+    context.exitSkill=skill;run("$('gameMode').value='survival';reset();enemies=[];spawnClock=999;charge=100;surfStock=1;if(exitSkill==='surf')activateSurf();else activate();special.t=special.duration-.001;update(.01)");
+    assert.equal(run('special'),null);assert.equal(run('player.inv'),.5);assert.equal(run('playerDamageBlink()'),false);
+    run("hurt('protected exit')");assert.equal(run('player.hp'),5);
+    run("update(.51);hurt('expired exit')");assert.equal(run('player.hp'),4);assert.equal(run('player.damageInv'),2.5);
+  }
+  run("reset();enemies=[];spawnClock=999;var pickupThreat=spawn(0,'normal',{x:0,y:0});pickupThreat.speed=0;pickups=[{x:0,y:0,age:0}];update(.01)");
+  assert.equal(run('player.hp'),5);assert.equal(run('stats.bunches'),1);assert.equal(run('player.inv'),.5);assert.equal(run('playerDamageBlink()'),false);
+  run("player.inv=0;hurt('real damage');collectBunch()");assert.equal(run('player.inv'),2.5);assert.equal(run('player.damageInv'),2.5);
+});
+milkTest('蕉片崛起 BGM changes only once at thirty seconds remaining',()=>{
+  for(const [at,rate] of [[0,1],[15,1],[29.99,1],[30,1.2],[50,1.2],[59,1.2]]){context.bgmTime=at;context.bgmRate=rate;assert.equal(run('musicRate(bgmTime)'),context.bgmRate);}
+});
+
 
 await (async()=>{
 run("var savedGroundDecode=groundSprite.decode;assetsReady=false;groundSprite.decode=()=>new Promise(resolve=>{globalThis.releaseImageDecode=resolve;})");

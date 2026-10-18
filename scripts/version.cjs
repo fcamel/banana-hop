@@ -16,8 +16,8 @@ if(action==='--check'){
   else if(/^\d+\.\d+\.\d+$/.test(action))next=action;
   else throw Error('Use patch, minor, major, an exact x.y.z version, or --check');
   if(!label)throw Error('Main menu version label not found');
-  for(const name of ['style.css','boss.js','surf.js','game.js'])if(!html.includes(name+'?v='))throw Error(`Missing cache key: ${name}`);
-  const updated=html.replace(/(class="game-version">)v[^<]+/,`$1v${next}`).replace(/(style\.css|boss\.js|surf\.js|game\.js)\?v=[^"\s]+/g,`$1?v=${next}`);
+  for(const name of ['style.css','boss.js','surf.js','milk.js','entrance.js','giant.js','game.js'])if(!html.includes(name+'?v='))throw Error(`Missing cache key: ${name}`);
+  const updated=html.replace(/(class="game-version">)v[^<]+/,`$1v${next}`).replace(/(style\.css|boss\.js|surf\.js|milk\.js|entrance\.js|giant\.js|game\.js)\?v=[^"\s]+/g,`$1?v=${next}`);
   pkg.version=next;fs.writeFileSync(packagePath,JSON.stringify(pkg,null,2)+'\n');fs.writeFileSync(htmlPath,updated);
   console.log(`Version updated: ${current} -> ${next} (no commit, tag, push or deploy)`);
 }

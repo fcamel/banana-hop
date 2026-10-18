@@ -10,7 +10,7 @@ The repository is `fcamel/banana-hop`; its production branch is `main`. Producti
 
 ## Versions
 
-Use three components everywhere: `MAJOR.MINOR.PATCH`. Earlier menu labels omitted `.0`; this release normalizes `v1.2` / package `1.2.0` to **v1.2.1**.
+Use three components everywhere: `MAJOR.MINOR.PATCH`. The package version, visible menu label and release asset query keys are synchronized by `scripts/version.cjs`.
 
 - Local changes do not bump the release version.
 - A requested release defaults to one patch bump, even for gameplay changes. For example, `1.2.1` → `1.2.2`.

@@ -1,10 +1,10 @@
 {
   "name": "banana-hop",
-  "version": "1.2.2",
+  "version": "2.0.0",
   "private": true,
-  "description": "香蕉踩香蕉 — a 120-second banana survival browser game",
+  "description": "香蕉踩香蕉 — 蕉片崛起與蕉皮末日，兩個獨立的香蕉生存與魔王戰關卡",
   "scripts": {
-    "check": "node --check dist/game.js && node --check dist/boss.js && node --check dist/surf.js && node --check scripts/version.cjs && node scripts/version.cjs --check",
+    "check": "node --check dist/game.js && node --check dist/boss.js && node --check dist/surf.js && node --check dist/milk.js && node --check dist/entrance.js && node --check dist/giant.js && node --check scripts/version.cjs && node scripts/version.cjs --check",
     "test": "node tests/game.test.cjs",
     "start": "python3 -m http.server 8893 --bind 127.0.0.1 --directory dist",
     "version:patch": "node scripts/version.cjs patch"

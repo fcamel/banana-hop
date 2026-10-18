@@ -5,7 +5,15 @@ root = Path(__file__).resolve().parents[1] / 'dist' / 'assets'
 limits = {'hero-surf-v1': (None,480), 'surfboard-v1': (320,None),
  'hero-front-v1': (None,410), 'hero-slip-v1': (None,560), 'hero-hurt-v1': (None,560),
  'durian-v1': (384,None), 'boss-necromancer-v1': (None,820),
- 'enemy-phantoms-v1': (1152,384), 'ground-items-v1': (1536,512), 'floor-tile-v1': (1024,1024)}
+ 'enemy-phantoms-v1': (1152,384), 'ground-items-v1': (1536,512), 'floor-tile-v1': (1024,1024),
+ 'enemy-banana-slice-v1': (384,None), 'enemy-sliced-king-v1': (None,640),
+ 'enemy-banana-hound-v1': (None,480), 'boss-banana-cerberus-red-v1': (None,820),
+ 'rest-banana-box-v1': (640,None), 'rest-banana-box-v2': (640,None),
+ 'milk-bottle-v1': (None,480),
+ 'banana-case-closed-v1': (640,None), 'banana-case-base-v1': (640,None),
+ 'banana-case-lid-v1': (640,None), 'hero-curled-v1': (512,None),
+ 'hero-rising-v1': (None,480), 'hero-stretch-v1': (None,560),
+ 'giant-banana-body-v1': (480,None), 'giant-banana-head-v1': (None,560)}
 before = after = 0
 for name, (width,height) in limits.items():
  source=root/(name+'.png'); target=root/(name+'.webp')

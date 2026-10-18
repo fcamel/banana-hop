@@ -1,0 +1,10 @@
+{
+  "generator": "Built-in image_gen",
+  "transparent_background": true,
+  "assets": [
+    {
+      "filename": "milk-bottle-v1.png",
+      "prompt": "Use case: stylized-concept. Asset: one isolated 2D browser game pickup sprite on genuine transparent background. A charming old fashioned thick glass milk bottle, narrow OPEN neck with a tiny tilted cream foil cap to the side, rounded shoulders and heavy rounded flat bottom. Filled two-thirds with pale creamy banana milk, exactly two visible yellow banana slices floating inside. Simple cream and ochre paper label with a small banana pictogram only, NO text, no brand or logo. Slight elevated front three-quarter view. Warm painterly cel shading, bold dark brown cartoon outlines, chunky clean readable silhouette matching Banana Hop game sprites. Full bottle centered with transparent margin, no ground, no scene, no cast shadow, no glow aura, no hands, no limbs, no extra objects, no watermark. Glass is translucent blue-grey at edges, milk opaque warm cream, subtle highlights, avoid bright bloom."
+    }
+  ]
+}

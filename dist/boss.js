@@ -1,4 +1,5 @@
 'use strict';
+const bossNameDuration=1;
 let boss=null,bossElapsed=0,bossShots=[],bossClones=[];
 const bossMusicBuffers=new Map();
 let bossFireSprite=null;
@@ -13,7 +14,7 @@ function bossFirePattern(){
 function bossRadius(){return Math.min(W,H/.72)*.34;}
 function isBossEntrance(){return !!boss&&['entrance','entrance-pose','entrance-banner'].includes(boss.phase);}
 function isBossCinematic(){return !!boss&&['quadrants-cinematic','split-cinematic'].includes(boss.phase);}
-function isBossWorldFrozen(){return isBossEntrance();}
+function isBossWorldFrozen(){return !!boxSequence||isBossEntrance()||isGiantEntrance();}
 function bossViewportPoint(sx,sy,margin=70,view=player){return {x:clamp(view.x+sx-W/2,-arenaSize+margin,arenaSize-margin),y:clamp(view.y+(sy-H*.52)/.72,-arenaSize+margin,arenaSize-margin)};}
 function bossOtherSide(actor=boss,reserved=[]){
   const occupied=[...bossClones,...reserved];
@@ -52,7 +53,7 @@ function updateBossEntrance(dt){
       boss.transformed=enemies.filter(e=>e.hp>0).map(e=>({x:e.x,y:e.y}));
       for(const e of enemies)if(e.hp>0)peels.push({id:serial++,x:e.x,y:e.y,age:.6,large:isLargeBanana(e)});
       enemies=[];durianWarnings=[];boss.phase='entrance-pose';boss.time=1;sfx('bossCast');
-    }else if(boss.phase==='entrance-pose'){boss.phase='entrance-banner';boss.time=.9;sfx('start');}
+    }else if(boss.phase==='entrance-pose'){boss.phase='entrance-banner';boss.time=bossNameDuration;sfx('start');}
     else{boss.transformed=[];resumeBossWorld();beginBossMove();}
   }
   updateHUD();
@@ -269,12 +270,21 @@ function tryStompBoss(){
   const target=targets[0];if(!target)return false;
   return hitBoss(target,true);
 }
+function protectStompLanding(){
+  if(player.stompLandingPending&&player.z<=0){player.stompLandingPending=false;player.inv=Math.max(player.inv,.5);player.stompGuard=player.inv;player.slipCooldown=Math.max(player.slipCooldown,.5);}
+}
+function bounceFromStomp(target,height=43){
+  const a=dist(player,target)>1?Math.atan2(player.y-target.y,player.x-target.x):Math.PI/2;
+  player.stompLandingPending=true;player.padDriftX=player.padDriftY=0;player.z=height;player.vz=200;player.down=0;player.recoil=.7;
+  player.recoilX=Math.cos(a)*420*characterScale();player.recoilY=Math.sin(a)*420*characterScale();
+  player.inv=Math.max(player.inv,1);player.stompGuard=player.inv;player.slipCooldown=Math.max(player.slipCooldown,1);player.giantBoostUntil=0;
+}
 function hitBoss(target,isStomp){
   if(!boss||boss.hp<=0||isBossCinematic()||isBossWorldFrozen()||(target!==boss&&!bossClones.includes(target))||target.hit>0||target.phase==='shield')return false;
   const a=dist(player,target)>1?Math.atan2(player.y-target.y,player.x-target.x):Math.PI/2;
   const hitX=target.x,hitY=target.y;
   if(isStomp){
-    player.z=43;player.vz=200;player.down=0;player.recoil=.7;player.recoilX=Math.cos(a)*420*characterScale();player.recoilY=Math.sin(a)*420*characterScale();player.inv=Math.max(player.inv,1);player.stompGuard=player.inv;player.slipCooldown=1;
+    bounceFromStomp(target);
     combo=0;comboLife=0;stats.stompHits++;stats.maxCombo=Math.max(stats.maxCombo,1);charge=Math.min(100,charge+20);sfx('stomp');sfx('jump');
   }else sfx('hit');
   burst(hitX,hitY,'#c9e7a5',16);texts.push({x:hitX,y:hitY,z:145*characterScale(),text:isStomp?'踩中！':special?.mode==='surf'?'衝浪命中！':'衝刺命中！',life:.65});shake=.07;
@@ -523,16 +533,19 @@ function drawBossShots(){
   for(const shot of bossShots){if(!isInView(shot,40,bossFireZ))continue;const p=screen(shot.x,shot.y,bossFireZ);ctx.drawImage(bossFireSprite,p.x-25,p.y-25,50,50);}
 }
 function updateBossHUD(){
-  const banner=boss?.phase==='entrance-banner';$('bossBanner').hidden=!banner;
-  if(banner){const progress=clamp(1-boss.time/.9,0,1);$('bossBanner').style.opacity=String(Math.min(1,progress*8,(1-progress)*6));$('bossBanner').style.transform=`translateY(${(1-Math.min(1,progress*6))*12}px)`;}
-  $('bossHud').hidden=!boss||isBossCinematic();$('gameClock').hidden=!!boss;
+  const giantBanner=isGiantNameEntrance();
+  const banner=boss?.phase==='entrance-banner'||giantBanner;$('bossBanner').hidden=!banner;
+  $('bossBannerTitle').textContent=giantBanner?'進擊的蕉巨':'腐蕉大法師';
+  if(giantBanner)$('bossBanner').classList.add('giant-banner');else $('bossBanner').classList.remove('giant-banner');
+  if(banner){const progress=clamp(giantBanner?(giantBattle.clock-giantRules.ceremony)/bossNameDuration:1-boss.time/bossNameDuration,0,1);$('bossBanner').style.opacity=String(Math.min(1,progress*12,(1-progress)*10));$('bossBanner').style.transform=`translateY(${(1-Math.min(1,progress*6))*12}px)`;}
+  $('bossHud').hidden=!boss||isBossCinematic();$('gameClock').hidden=!!boss||!!giantBattle;
   if(!boss)return;
   if($('bossBananas').dataset?.hp!==String(boss.hp)){
     $('bossBananas').innerHTML=Array.from({length:bossMaxHp},(_,i)=>`<span class="health-banana ${i<boss.hp?'filled':'empty'}" aria-hidden="true"><svg viewBox="0 0 34 32"><path d="M7 3C1 14 7 31 23 29C31 28 34 19 32 11C26 21 15 17 13 4Z"/><path class="banana-seam" d="M8 8C7 21 20 28 29 20"/><path class="banana-tip" d="M7 2L13 3L13 7L7 6Z"/></svg></span>`).join('');
     if($('bossBananas').dataset)$('bossBananas').dataset.hp=String(boss.hp);
     $('bossBananas').setAttribute('aria-label',`魔王生命 ${boss.hp} / ${bossMaxHp}`);
   }
-  $('bossAction').textContent=({'entrance':'腐蕉法師現身','entrance-pose':'萬蕉歸皮','entrance-banner':'準備開戰','sea-aim':'蕉皮海','sea':'蕉皮海','revive':'死蕉召喚','fire-aim':'鬼火蓄力','fire':'連發鬼火','stunned':'命中！','rest':'腐蕉大法師','teleport-aim':'瞬移','shield-aim':'護罩蓄力','shield':'鬼火防護罩','quadrants-cinematic':'四方聚蕉','split-cinematic':'分身降臨','clone-aim':'分身召喚'})[boss.phase]||'腐蕉大法師';
+  $('bossAction').textContent=({'entrance':'腐蕉大法師現身','entrance-pose':'萬蕉歸皮','entrance-banner':'準備開戰','sea-aim':'蕉皮海','sea':'蕉皮海','revive':'死蕉召喚','fire-aim':'鬼火蓄力','fire':'連發鬼火','stunned':'命中！','rest':'腐蕉大法師','teleport-aim':'瞬移','shield-aim':'護罩蓄力','shield':'鬼火防護罩','quadrants-cinematic':'四方聚蕉','split-cinematic':'分身降臨','clone-aim':'分身召喚'})[boss.phase]||'腐蕉大法師';
   if(boss.hp<=2)$('bossAction').textContent+=` · ${bossClones.length+1} 體`;
 }
 // Dedicated ghost-funk score: 16 bars at 128 BPM, two semitones lower, with fixed tempo throughout battle.
@@ -590,7 +603,7 @@ function createBossMusicBuffer(context,climax=false){
   return buffer;
 }
 function currentBossMusicBuffer(){
-  const key=boss.hp===1?'final':'normal',cached=bossMusicBuffers.get(key);
+  const key=boss?.hp===1?'final':'normal',cached=bossMusicBuffers.get(key);
   if(cached?.context===audioCtx)return cached.buffer;
   const buffer=preparedMusicBuffer(`boss:${key}`,audioCtx,()=>createBossMusicBuffer(audioCtx,key==='final'));bossMusicBuffers.set(key,{context:audioCtx,buffer});return buffer;
 }

@@ -40,7 +40,7 @@ function activateSurf(){
   const dx=(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+stick.x;
   const dy=(keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0)+stick.y;
   const angle=Math.hypot(dx,dy)>.1?Math.atan2(dy,dx):player.face;
-  surfStock--;stats.surfs++;special={mode:'surf',t:0,duration:2,feedFlash:0,dx:Math.cos(angle),dy:Math.sin(angle),speed:420,hits:new Set(),trail:[],nextSound:.15};
+  player.giantBoostUntil=0;player.padDriftX=player.padDriftY=0;surfStock--;stats.surfs++;special={mode:'surf',t:0,duration:2,feedFlash:0,dx:Math.cos(angle),dy:Math.sin(angle),speed:420,hits:new Set(),trail:[],nextSound:.15};
   player.down=0;player.recoil=0;player.vz=0;player.z=0;player.face=angle;
   notify('蕉皮衝浪！移動轉向 · 吃蕉皮延長');sfx('ultimate');updateHUD();return true;
 }
