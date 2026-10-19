@@ -14,6 +14,7 @@
 - [DEPLOYMENT.md](DEPLOYMENT.md)：版號、驗證、commit／push／GitHub Pages 發布與失敗處理。
 - [CHANGELOG.md](CHANGELOG.md)：各版本的重要更新與重大 Bug 修正。
 - [SIMULATION.md](SIMULATION.md)：AI 自動操作、無畫面模擬、訓練介面與 Replay。
+- [TRAINING_DASHBOARD.md](TRAINING_DASHBOARD.md)：本機每代分數曲線、突破 Replay 與容量限制。
 - [NN_TRAINING.md](NN_TRAINING.md)：待實作的 NN／PPO 生存訓練與自動 Replay 建議。
 
 預設只做 local 開發。明確要求發布時才進行對應動作；版號預設升 patch，詳見發布文件。

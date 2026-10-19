@@ -12,6 +12,10 @@
 
 Replay 使用錄製時的邏輯 viewport 與手機倍率，畫面縮放呈現，因此在不同螢幕上播放不會改變出兵與碰撞規則。這是遊戲狀態重演；裝飾粒子、晃動與聲音不要求逐像素相同。
 
+## 訓練結果儀表板
+
+開啟本機 `/training/` 可追蹤每代分數與點擊突破 Replay；提供 CLI、Python 與 HTTP 記錄介面，尚未包含 NN 訓練器。Replay 共用最多 100 檔／100 MB 配額，固定保留各次訓練的初代；分數歷史不輪替。設定與使用方式見 [TRAINING_DASHBOARD.md](TRAINING_DASHBOARD.md)。
+
 ## 不繪圖模擬
 
 Node.js 22 以上即可，不需要瀏覽器、Canvas、Web Audio、圖檔解碼或額外 npm 套件。`sim/environment.cjs` 在獨立 VM 中載入相同遊戲程式，提供最小的介面相容層；跳過顯示、素材預備及音樂生成，直接推進遊戲時間。

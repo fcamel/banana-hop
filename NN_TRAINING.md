@@ -46,6 +46,10 @@
 
 參考：[Gymnasium 的終止與截斷說明](https://gymnasium.farama.org/tutorials/gymnasium_basics/handling_time_limits/)。
 
+## 訓練結果觀察工具
+
+已新增本機 [訓練觀察室](TRAINING_DASHBOARD.md)，可接收每代評估結果、顯示分數曲線，並保留初代與突破 Replay 直接播放；此工具不等於 NN／PPO 訓練器，下面的模型訓練流程仍待實作。
+
 ## 訓練流程與現有架構銜接
 
 1. 增加可重現的 survival-only 訓練設定，保留原正式關卡。
