@@ -43,12 +43,18 @@ python3 -m venv .venv
 Only currently used game artwork remains in `dist/assets/`; remove both PNG/WebP and their loader/cache/generator entries when artwork is retired. The 16 active PNG sources remain in `dist/assets/`; the script resizes to the delivery dimensions and writes transparent lossless desktop WebP in `dist/assets/` and same-resolution quality-85 mobile WebP in `dist/assets/mobile/`. Both sets are deployed. Before preloading, the browser selects one family using `matchMedia('(max-width: 650px), (pointer: coarse)')`, consistent with the touch layout; it does not parse User-Agent. The selection stays fixed until reload so rotation/resizing does not reload the full image set. The surf UI icon uses that same URL family and cache. Commit source PNG changes, the generator and regenerated delivery images together. Existing checked-in WebP files let a fresh checkout run locally without Pillow.
 
 ```sh
-npm start
+BANANA_AI_REPLAY=1 npm start
 # In another terminal:
 npm run check
 npm test
 git diff --check
 ```
+
+### Development feature flags
+
+`BANANA_AI_REPLAY=1 npm start` (also accepts `true`) enables AI/Replay on the local server. Without the environment variable, the browser feature is disabled. `scripts/serve.py` serves a dynamic, `Cache-Control: no-store` response for `features.js`, including HEAD requests and cache-key queries, without writing to `dist/`. Restart the server after changing the environment.
+
+The checked-in `dist/features.js` always defaults to `aiReplay:false`; Pages serves this static file, so local environment settings cannot leak into deployment. `npm run check`, the feature tests and the upload step verify that production configuration remains disabled. Do not generate a development-enabled file in `dist/`. Both the controls and their browser startup/import/export paths are gated across the main menu, pause and results screens. Command-line headless simulation remains available independently of the browser flag.
 
 Gameplay parameters belong in `GAMEPLAY.md`; setup belongs in README; agent conventions belong in `AGENTS.md`.
 

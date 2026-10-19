@@ -17,9 +17,9 @@
 
 ## Implementation and verification
 
-- Serve `dist/` on `http://127.0.0.1:8893/` (`npm start`), first checking whether that port is already serving this checkout. Do not stop an unrelated process.
+- Serve `dist/` on `http://127.0.0.1:8893/` (`BANANA_AI_REPLAY=1 npm start`), first checking whether that port is already serving this checkout. Do not stop an unrelated process. Keep AI/Replay enabled for local development and verify `/features.js` reports `aiReplay:true`; use a separate temporary server for flag-off tests. Never write local feature overrides into the static deployment configuration.
 - Entry points: `dist/game.js` (main loop, player, ordinary enemies, collision, audio), `dist/boss.js` (boss AI, ceremonies, music), `dist/surf.js` (consumable surf), `dist/index.html`, `dist/style.css`.
-- Script order is `boss.js`, `surf.js`, `game.js`; these files share global lexical bindings. Preserve load order and initialize DOM elements before registering handlers.
+- Script order is `features.js`, `control.js`, `boss.js`, `surf.js`, `milk.js`, `entrance.js`, `giant.js`, `game.js`, `ai-ui.js`; these files share global lexical bindings. Preserve load order and initialize DOM elements before registering handlers.
 - Keep the native browser implementation; do not introduce a framework, package dependency or external service without a concrete need.
 - For gameplay fixes, add meaningful regression coverage to `tests/game.test.cjs`; run `npm run check` and `npm test`. Documentation-only edits need document/link/diff checks, not a full gameplay test run.
 - When changing UI, assets, camera, mobile controls, fullscreen or animation, inspect the relevant browser state and check console/runtime errors when browser tooling is available. Distinguish desktop emulation from testing on an actual phone; do not claim device coverage you did not perform.

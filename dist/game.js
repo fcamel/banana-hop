@@ -102,8 +102,8 @@ function loadGameAssets(){
 }
 function newPlayer(){return {x:0,y:0,z:0,vz:0,hp:5,inv:0,damageInv:0,down:0,recoil:0,stompGuard:0,recoilX:0,recoilY:0,padDriftX:0,padDriftY:0,stompLandingPending:false,downPose:'slip',slipX:0,slipY:0,slipCooldown:0,face:0,jumpLock:0};}
 player=newPlayer();
-function characterScale(){return window.matchMedia?.('(max-width: 650px), (pointer: coarse)').matches ? .7 : 1;}
-function resize(){const b=canvas.getBoundingClientRect();W=b.width;H=b.height;dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);}
+function characterScale(){if(simulationConfig)return simulationConfig.mobile?.7:1;return window.matchMedia?.('(max-width: 650px), (pointer: coarse)').matches ? .7 : 1;}
+function resize(){const b=canvas.getBoundingClientRect();W=simulationConfig?.width??b.width;H=simulationConfig?.height??b.height;dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);}
 new ResizeObserver(resize).observe(canvas);
 function unlockAudio(){if(!sound)return;try{audioCtx ||= new (window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume().catch(()=>{});}catch{}}
 // Shared output keeps both music and effects on the same loudness controls.
@@ -129,6 +129,7 @@ function tone(freq=440,duration=.08,type='sine',volume=.035,delay=0,endFreq=freq
   try{const start=audioCtx.currentTime+delay,o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=type;o.frequency.setValueAtTime(freq,start);o.frequency.exponentialRampToValueAtTime(Math.max(20,endFreq),start+duration);g.gain.setValueAtTime(.001,start);g.gain.exponentialRampToValueAtTime(volume*3,start+.008);g.gain.exponentialRampToValueAtTime(.001,start+duration);o.connect(g);g.connect(getAudioOutput());o.start(start);o.stop(start+duration+.015);o.onended=()=>{o.disconnect();g.disconnect();};}catch{}
 }
 function sfx(name,pitch=1){
+  if(simulationHeadless)return;
   if(!sound)return;unlockAudio();if(!audioCtx)return;const now=audioCtx.currentTime;if(now-(lastSfx.get(name)??-Infinity)<.04)return;lastSfx.set(name,now);
   if(name==='milkJet'){
     try{const duration=.16,buffer=audioCtx.createBuffer(1,Math.ceil(audioCtx.sampleRate*duration),audioCtx.sampleRate),data=buffer.getChannelData(0);
@@ -238,6 +239,7 @@ function currentMusicBuffer(){
   const buffer=preparedMusicBuffer(`survival:${tempo}`,audioCtx,()=>createMusicBuffer(audioCtx,tempo));musicTempoBuffers.set(tempo,{context:audioCtx,buffer});return buffer;
 }
 function syncMusic(){
+  if(simulationHeadless)return;
   if(musicSource){try{musicGain.gain.setTargetAtTime(0,audioCtx.currentTime,.008);musicSource.stop(audioCtx.currentTime+.04);}catch{}musicSource=null;musicGain=null;}
   if(state!=='playing'||mobilePlayBlocked||!sound||boxSequence)return;
   unlockAudio();if(!audioCtx)return;
@@ -251,8 +253,8 @@ function syncMusic(){
   }catch{}
 }
 
-function notify(msg){if(giantBattle)return;$('notice').textContent=msg;noticeLife=2;}
-function updateHUD(){updateBossHUD();const inBoss=!!boss||!!giantBattle,t=Math.max(0,Math.ceil(roundDuration()-elapsed));$('tempoLabel').textContent=inBoss?'Boss 戰・已經過':milkStage?'蕉片崛起':'蕉皮末日';
+function notify(msg){if(simulationHeadless)return;if(giantBattle)return;$('notice').textContent=msg;noticeLife=2;}
+function updateHUD(){if(simulationHeadless)return;updateBossHUD();const inBoss=!!boss||!!giantBattle,t=Math.max(0,Math.ceil(roundDuration()-elapsed));$('tempoLabel').textContent=inBoss?'Boss 戰・已經過':milkStage?'蕉片崛起':'蕉皮末日';
   $('bossClock').hidden=!inBoss;
   if(inBoss){const seconds=Math.floor(giantBattle?giantBattle.clock:bossElapsed);$('bossTimer').textContent=`${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;}
   for(const [name,active] of [['warning',milkStage?t<=45&&t>30:elapsed>=60&&elapsed<90],['danger',milkStage?t<=30:elapsed>=90]]){if(active&&!inBoss)$('gameClock').classList.add(name);else $('gameClock').classList.remove(name);}
@@ -261,9 +263,9 @@ function updateHUD(){updateBossHUD();const inBoss=!!boss||!!giantBattle,t=Math.m
   $('hearts').innerHTML=Array.from({length:5},(_,i)=>`<span class="health-banana ${i<player.hp?'filled':'empty'}" aria-hidden="true"><svg viewBox="0 0 34 32"><path d="M7 3C1 14 7 31 23 29C31 28 34 19 32 11C26 21 15 17 13 4Z"/><path class="banana-seam" d="M8 8C7 21 20 28 29 20"/><path class="banana-tip" d="M7 2L13 3L13 7L7 6Z"/></svg></span>`).join('');
   $('hearts').setAttribute('aria-label',`生命 ${player.hp} / 5`);if($('hearts').dataset)$('hearts').dataset.hp=String(player.hp);
 }$('kills').textContent=String(kills).padStart(3,'0');$('bar1').style.width=`${Math.min(charge,100)}%`;$('chargeMeter').setAttribute('aria-valuenow',String(Math.round(charge)));if(charge>=100)$('chargeMeter').classList.add('ready');else $('chargeMeter').classList.remove('ready');$('specialTouch').disabled=charge<100||!!special||isBossWorldFrozen();$('jumpTouch').disabled=isBossWorldFrozen();updateSurfHUD();updateMilkHUD();$('surfUse').style.display=milkStage?'none':'';$('combo').textContent=combo>1&&comboLife>0?`${combo} 連踩`:'';}
-function reset(showEntrance=true){if(!assetsReady)return;resetBoxState();spawnHeading={x:1,y:0};spawnMotion=[];spawnWarnings=[];spawnDueWaves=0;spawnReleaseClock=0;$('keyboardStartHint').hidden=true;const directMilkBoss=$('gameMode').value==='milk-boss'||(debugUnlocked&&$('debugStart').value==='milk-boss');milkStage=$('gameMode').value==='milk'||directMilkBoss;resetMilkStage();boss=null;bossElapsed=0;bossShots=[];bossClones=[];$('overlayText').hidden=false;invincibleMode=debugUnlocked&&!!$('debugInvincible').checked;$('overlay').classList.remove('victory');$('debugOptions').hidden=true;$('modeOptions').hidden=true;$('overlay').classList.remove('intro-screen');stats=freshStats();$('resultStats').hidden=true;lastSfx.clear();unlockAudio();sfx('start');nextDurianAt=10;durianWarnings=[];nextChargerAt=20;nextThrowerAt=30;pickups=[];orbitPeels=[];nextPickupAt=17;nextBunchSide=0;endElapsed=0;$('overlay').classList.remove('ending');$('arena')?.classList.remove('ended');$('endWipe').hidden=true;$('start').disabled=false;player=newPlayer();enemies=[];peels=[];particles=[];texts=[];special=null;elapsed=!milkStage&&debugUnlocked?[62,32,12].includes(Number($('debugStart').value))?gameDuration-Number($('debugStart').value):0:0;if(elapsed>0){nextDurianAt=elapsed+2;nextChargerAt=elapsed+2;nextThrowerAt=elapsed+3;nextPickupAt=elapsed+2;}resetSurf();spawnClock=milkStage?smallSpawnInterval():.4/.75;charge=0;kills=0;combo=0;comboLife=0;noticeLife=0;keys.clear();stick.x=stick.y=0;state='playing';syncMusic();$('overlay').hidden=true;$('pause').textContent='Ⅱ';$('arena')?.classList.add('playing');if(characterScale()<1){document.body?.classList.add('game-active');window.scrollTo?.(0,0);resize();}if(directMilkBoss){elapsed=milkRules.duration;beginGiantBattle();}const debugBossHp=!milkStage&&debugUnlocked?({'boss-5':5,'boss-2':2}[$('debugStart').value]):undefined;if(!milkStage&&($('gameMode').value==='boss'||(debugUnlocked&&$('debugStart').value==='boss')||debugBossHp)){populateRound();elapsed=120;nextPickupAt=122;startBossBattle(true);if(debugBossHp)prepareDebugBossStage(debugBossHp);}if(!boss&&!giantBattle){if(showEntrance&&elapsed===0)startBoxEntrance();else populateRound();}trackBattlePeaks();updateHUD();canvas.focus();if(!boxSequence&&!giantBattle)notify(milkStage?'搶牛奶瓶！香蕉片也會跳進去 · 撐過 60 秒':boss?'':characterScale()<1?'左側移動 · 右側跳踩／衝刺 · 撐過 120 秒':'SPACE 跳踩 · J 衝刺 · 撐過 120 秒');}
+function reset(showEntrance=true){if(!assetsReady)return;$('home').hidden=true;resetBoxState();spawnHeading={x:1,y:0};spawnMotion=[];spawnWarnings=[];spawnDueWaves=0;spawnReleaseClock=0;$('keyboardStartHint').hidden=true;const directMilkBoss=$('gameMode').value==='milk-boss'||(debugUnlocked&&$('debugStart').value==='milk-boss');milkStage=$('gameMode').value==='milk'||directMilkBoss;resetMilkStage();boss=null;bossElapsed=0;bossShots=[];bossClones=[];$('overlayText').hidden=false;invincibleMode=debugUnlocked&&!!$('debugInvincible').checked;$('overlay').classList.remove('victory');$('debugOptions').hidden=true;$('modeOptions').hidden=true;$('overlay').classList.remove('intro-screen');stats=freshStats();$('resultStats').hidden=true;lastSfx.clear();unlockAudio();sfx('start');nextDurianAt=10;durianWarnings=[];nextChargerAt=20;nextThrowerAt=30;pickups=[];orbitPeels=[];nextPickupAt=17;nextBunchSide=0;endElapsed=0;$('overlay').classList.remove('ending');$('arena')?.classList.remove('ended');$('endWipe').hidden=true;$('start').disabled=false;player=newPlayer();enemies=[];peels=[];particles=[];texts=[];special=null;elapsed=!milkStage&&debugUnlocked?[62,32,12].includes(Number($('debugStart').value))?gameDuration-Number($('debugStart').value):0:0;if(elapsed>0){nextDurianAt=elapsed+2;nextChargerAt=elapsed+2;nextThrowerAt=elapsed+3;nextPickupAt=elapsed+2;}resetSurf();spawnClock=milkStage?smallSpawnInterval():.4/.75;charge=0;kills=0;combo=0;comboLife=0;noticeLife=0;keys.clear();stick.x=stick.y=0;state='playing';syncMusic();$('overlay').hidden=true;$('pause').textContent='Ⅱ';$('arena')?.classList.add('playing');if(characterScale()<1){document.body?.classList.add('game-active');window.scrollTo?.(0,0);resize();}if(directMilkBoss){elapsed=milkRules.duration;beginGiantBattle();}const debugBossHp=!milkStage&&debugUnlocked?({'boss-5':5,'boss-2':2}[$('debugStart').value]):undefined;if(!milkStage&&($('gameMode').value==='boss'||(debugUnlocked&&$('debugStart').value==='boss')||debugBossHp)){populateRound();elapsed=120;nextPickupAt=122;startBossBattle(true);if(debugBossHp)prepareDebugBossStage(debugBossHp);}if(!boss&&!giantBattle){if(showEntrance&&elapsed===0)startBoxEntrance();else populateRound();}trackBattlePeaks();updateHUD();canvas.focus();if(!boxSequence&&!giantBattle)notify(milkStage?'搶牛奶瓶！香蕉片也會跳進去 · 撐過 60 秒':boss?'':characterScale()<1?'左側移動 · 右側跳踩／衝刺 · 撐過 120 秒':'SPACE 跳踩 · J 衝刺 · 撐過 120 秒');}
 function gameTempo(time=elapsed){return !milkStage&&time>=90?1.5:1;}
-function smallSpawnInterval(time=elapsed){if(milkStage){const p=milkPressure(time);return p.intervalMin+Math.random()*(p.intervalMax-p.intervalMin);}return Math.max(.5,(.9-time*.005)/.75);}
+function smallSpawnInterval(time=elapsed){if(milkStage){const p=milkPressure(time);return p.intervalMin+gameRandom()*(p.intervalMax-p.intervalMin);}return Math.max(.5,(.9-time*.005)/.75);}
 const enemyTimeSpeedCap=188;
 function enemyWalkSpeed(e,tempo=gameTempo()){return Math.min(e.speed*tempo,e.type==='normal'||e.type==='thrower'?enemyTimeSpeedCap:Infinity);}
 function isLargeBanana(e){return e.type==='charger'||e.type==='thrower';}
@@ -323,10 +325,10 @@ function chooseNaturalSpawn(){
   if(!options.length)options=lowestDensityCells(cells,true);
   if(!options.length)return null;
   const sectors=Object.keys(weights).filter(sector=>weights[sector]>0&&options.some(p=>p.sector===sector));
-  if(!sectors.length)return options[Math.floor(Math.random()*options.length)];
-  let pick=Math.random()*sectors.reduce((sum,sector)=>sum+weights[sector],0);
+  if(!sectors.length)return options[Math.floor(gameRandom()*options.length)];
+  let pick=gameRandom()*sectors.reduce((sum,sector)=>sum+weights[sector],0);
   const sector=sectors.find(name=>(pick-=weights[name])<0)||sectors[sectors.length-1],pool=options.filter(p=>p.sector===sector);
-  return pool[Math.min(pool.length-1,Math.floor(Math.random()*pool.length))];
+  return pool[Math.min(pool.length-1,Math.floor(gameRandom()*pool.length))];
 }
 function recyclableNaturalEnemies(){
   return enemies.filter(e=>e.hp>0&&(milkStage?e.type==='slice'&&e.sliceRallyId==null:e.type==='normal'&&e.hp===1));
@@ -380,14 +382,14 @@ function drawSpawnWarnings(){
   }
 }
 
-function spawn(radius,forcedType='normal',position=null){const a=Math.random()*TAU,r=radius||(Math.max(W,H)*.6+100);const type=milkStage&&forcedType==='normal'?'slice':forcedType;const ripenessRoll=Math.random(),hp=type==='thrower'?2:type==='slice'||type==='durian'||type==='charger'?1:ripenessRoll<.5?2:1;enemies.push({id:serial++,x:clamp(player.x+Math.cos(a)*r,-arenaSize+30,arenaSize-30),y:clamp(player.y+Math.sin(a)*r*.85,-arenaSize+30,arenaSize-30),hp,type,speed:type==='durian'?40:55+Math.random()*25+elapsed*.24,wobble:Math.random()*TAU,hit:0,knock:0,kx:0,ky:0,down:0,slipCooldown:0,slipX:0,slipY:0,color:ripenessColors[hp]});const enemy=enemies[enemies.length-1];if(type==='slice')enemy.speed=milkRules.sliceSpeed+Math.random()*milkRules.sliceSpeedVariation;if(position){enemy.x=position.x;enemy.y=position.y;}enemy.facing=player.x>=enemy.x?1:-1;enemy.lastFacingAt=-Infinity;if(type==='durian'){enemy.rollAngle=0;enemy.rollFacing=enemy.x<=player.x?1:-1;}if(type==='thrower'){enemy.hp=2;enemy.speed=(67.5+elapsed*.24)*1.5;enemy.color=bananaColor(enemy);enemy.throwCooldown=1;enemy.phase='seek';}if(type==='charger'){enemy.x=clamp(enemy.x,-arenaSize+52,arenaSize-52);enemy.y=clamp(enemy.y,-arenaSize+52,arenaSize-52);enemy.color=bananaColor(enemy);enemy.phase='approach';enemy.phaseTime=0;enemy.speed=52;}return enemy;}
+function spawn(radius,forcedType='normal',position=null){const a=gameRandom()*TAU,r=radius||(Math.max(W,H)*.6+100);const type=milkStage&&forcedType==='normal'?'slice':forcedType;const ripenessRoll=gameRandom(),hp=type==='thrower'?2:type==='slice'||type==='durian'||type==='charger'?1:ripenessRoll<.5?2:1;enemies.push({id:serial++,x:clamp(player.x+Math.cos(a)*r,-arenaSize+30,arenaSize-30),y:clamp(player.y+Math.sin(a)*r*.85,-arenaSize+30,arenaSize-30),hp,type,speed:type==='durian'?40:55+gameRandom()*25+elapsed*.24,wobble:gameRandom()*TAU,hit:0,knock:0,kx:0,ky:0,down:0,slipCooldown:0,slipX:0,slipY:0,color:ripenessColors[hp]});const enemy=enemies[enemies.length-1];if(type==='slice')enemy.speed=milkRules.sliceSpeed+gameRandom()*milkRules.sliceSpeedVariation;if(position){enemy.x=position.x;enemy.y=position.y;}enemy.facing=player.x>=enemy.x?1:-1;enemy.lastFacingAt=-Infinity;if(type==='durian'){enemy.rollAngle=0;enemy.rollFacing=enemy.x<=player.x?1:-1;}if(type==='thrower'){enemy.hp=2;enemy.speed=(67.5+elapsed*.24)*1.5;enemy.color=bananaColor(enemy);enemy.throwCooldown=1;enemy.phase='seek';}if(type==='charger'){enemy.x=clamp(enemy.x,-arenaSize+52,arenaSize-52);enemy.y=clamp(enemy.y,-arenaSize+52,arenaSize-52);enemy.color=bananaColor(enemy);enemy.phase='approach';enemy.phaseTime=0;enemy.speed=52;}return enemy;}
 // Deterministic arrivals: a visible warning precedes each scheduled durian.
 function updateDurianSchedule(){
   if(elapsed>=nextDurianAt-1.2){
     const limit=Math.min(12,1+Math.floor(elapsed/12));
     if(enemies.filter(e=>e.type==='durian'&&e.hp>0).length+durianWarnings.length<limit){
-      const side=Math.random()<.5?-1:1;
-      const candidates=[side,-side].map(sign=>({x:clamp(player.x+sign*Math.max(120,W/2-45),-arenaSize+35,arenaSize-35),y:clamp(player.y+(Math.random()-.5)*Math.min(240,H*.35/.72),-arenaSize+35,arenaSize-35)}));
+      const side=gameRandom()<.5?-1:1;
+      const candidates=[side,-side].map(sign=>({x:clamp(player.x+sign*Math.max(120,W/2-45),-arenaSize+35,arenaSize-35),y:clamp(player.y+(gameRandom()-.5)*Math.min(240,H*.35/.72),-arenaSize+35,arenaSize-35)}));
       const position=candidates.sort((a,b)=>dist(player,b)-dist(player,a))[0];
       durianWarnings.push({...position,at:nextDurianAt});notify('榴槤來襲！避開尖刺');sfx('warning');
     }
@@ -403,7 +405,7 @@ function updateChargerSchedule(){
   if(enemies.filter(e=>e.type==='charger'&&e.hp>0).length>=10)return;
   if(enemies.length>=110){const victim=enemies.filter(e=>e.type==='normal').sort((a,b)=>dist(player,b)-dist(player,a))[0];if(!victim)return;enemies=enemies.filter(e=>e!==victim);}
   const sign=player.x>0?-1:1;
-  spawn(0,'charger',{x:clamp(player.x+sign*Math.max(140,Math.min(340,W/2-45)),-arenaSize+35,arenaSize-35),y:clamp(player.y+(Math.random()-.5)*140,-arenaSize+35,arenaSize-35)});
+  spawn(0,'charger',{x:clamp(player.x+sign*Math.max(140,Math.min(340,W/2-45)),-arenaSize+35,arenaSize-35),y:clamp(player.y+(gameRandom()-.5)*140,-arenaSize+35,arenaSize-35)});
   notify('大深綠香蕉來襲！踩中會分裂');sfx('warning');
 }
 function updateThrowerSchedule(){
@@ -569,12 +571,12 @@ function spawnBunch(){
   const options=[];
   for(let side=0;side<4;side++){
     for(let i=0;i<9;i++){
-      const along=.12+(.76*(i+Math.random())/9);
+      const along=.12+(.76*(i+gameRandom())/9);
       const sx=side===0?-60:side===1?W+60:W*along;
       const sy=side===2?-60:side===3?H+60:H*along;
       const x=player.x+sx-W/2,y=player.y+(sy-H*.52)/.72;
       if(Math.abs(x)>limit||Math.abs(y)>limit)continue;
-      const spacing=active.length?Math.min(...active.map(p=>Math.hypot(p.x-x,p.y-y))):Math.random();
+      const spacing=active.length?Math.min(...active.map(p=>Math.hypot(p.x-x,p.y-y))):gameRandom();
       options.push({x,y,side,spacing});
     }
   }
@@ -648,7 +650,7 @@ function drawBunchVector(p){
 }
 
 function jump(){if(milkPack)return;if(state!=='playing'||isBossWorldFrozen()||special||player.recoil>0||player.down>0||player.z>1||player.jumpLock>0)return;player.vz=350;player.jumpLock=.12;sfx('jump');}
-function burst(x,y,color,n=12){for(let i=0;i<n;i++){const a=Math.random()*TAU,s=30+Math.random()*150;particles.push({x,y,z:8,vx:Math.cos(a)*s,vy:Math.sin(a)*s,vz:80+Math.random()*80,life:.4+Math.random()*.3,color});}}
+function burst(x,y,color,n=12){if(simulationHeadless)return;for(let i=0;i<n;i++){const a=Math.random()*TAU,s=30+Math.random()*150;particles.push({x,y,z:8,vx:Math.cos(a)*s,vy:Math.sin(a)*s,vz:80+Math.random()*80,life:.4+Math.random()*.3,color});}}
 // Slipping never grants damage immunity; the player remains vulnerable while down.
 function slip(actor,angle){actor.down=.7;actor.slipCooldown=1.05;const speed=isLargeBanana(actor)?288:480;actor.slipX=Math.cos(angle)*speed;actor.slipY=Math.sin(angle)*speed;if(actor===player){stats.slips++;player.recoil=0;player.downPose='slip';player.padDriftX=player.padDriftY=0;player.stompLandingPending=false;player.giantBoostUntil=0;player.z=0;player.vz=0;combo=0;comboLife=0;sfx('slip');notify('滑倒！小心敵人');}}
 function slide(actor,dt){const step=Math.min(dt,actor.down);const decay=Math.exp(-1.5*step),travel=(1-decay)/1.5;actor.x+=actor.slipX*travel;actor.y+=actor.slipY*travel;actor.slipX*=decay;actor.slipY*=decay;actor.down=Math.max(0,actor.down-dt);}
@@ -1056,6 +1058,7 @@ separateEnemies();
 enemies=enemies.filter(e=>e.hp>0);updateNaturalArrivals(dt);peels.forEach(p=>p.age+=dt);particles.forEach(p=>{p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vz-=380*dt;p.z+=p.vz*dt;});particles=particles.filter(p=>p.life>0);texts.forEach(t=>{t.life-=dt;t.z+=dt*32;});texts=texts.filter(t=>t.life>0);trackBattlePeaks();updateHUD();}
 function finish(win){
   if(state==='over')return;
+  if(simulationHeadless){trackBattlePeaks();clearMilkJetInput();state='over';keys.clear();stick.x=stick.y=0;return;}
   trackBattlePeaks();clearMilkJetInput();state='over';$('finalCountdown').hidden=true;syncMusic();endElapsed=0;shake=0;keys.clear();stick.x=stick.y=0;
   $('arena')?.classList.add('ended');$('overlay').classList.add('ending');
   $('endWipe').hidden=false;$('endWipe').style.clipPath='inset(0 0 100% 0)';
@@ -1071,11 +1074,32 @@ function finish(win){
   ];
   $('resultStats').innerHTML=results.map(([label,value])=>`<div><dt>${label}</dt><dd>${value}</dd></div>`).join('');$('resultStats').hidden=false;
   $('modeOptions').hidden=false;$('start').innerHTML='重新挑戰 <span>↗</span>';$('start').disabled=true;
-  $('keyboardStartHint').hidden=false;$('keyboardStartHint').textContent='結算中…稍後可按 SPACE 重新挑戰';$('overlayFoot').textContent='';$('overlay').hidden=false;updateHUD();sfx(win?'win':'lose');
+  $('keyboardStartHint').hidden=false;$('keyboardStartHint').textContent='結算中…稍後可按 SPACE 重新挑戰';$('overlayFoot').textContent='';$('overlay').hidden=false;$('home').hidden=false;updateHUD();sfx(win?'win':'lose');
 }
 function tickEnding(dt){endElapsed=Math.min(2,endElapsed+dt);$('endWipe').style.clipPath=`inset(0 0 ${(1-endElapsed/2)*100}% 0)`;if(endElapsed>=2){$('start').disabled=false;$('keyboardStartHint').textContent='按 SPACE 重新挑戰';}}
 
-function pause(){if(state==='playing'){clearMilkJetInput();$('keyboardStartHint').hidden=true;$('overlayText').hidden=false;$('overlay').classList.add('intro-screen');$('resultStats').hidden=true;state='paused';updateSurfHUD();updateMilkHUD();$('finalCountdown').hidden=true;syncMusic();keys.clear();stick.x=stick.y=0;$('knob').style.transform='';$('overlayTitle').textContent='香蕉休息中';$('overlayText').textContent=characterScale()<1?'左側搖桿移動 · 右側跳踩／衝刺／衝浪':'移動：WASD／方向鍵 · 跳踩：空白鍵 · 衝刺：J · 衝浪：K';$('start').innerHTML='繼續蹦跳 <span>↗</span>';$('overlay').hidden=false;$('pause').textContent='▶';}else if(state==='paused'){$('overlay').classList.remove('intro-screen');state='playing';syncMusic();updateHUD();$('overlay').hidden=true;$('pause').textContent='Ⅱ';canvas.focus();}}
+function pause(){if(state==='playing'){$('home').hidden=false;clearMilkJetInput();$('keyboardStartHint').hidden=true;$('overlayText').hidden=false;$('overlay').classList.add('intro-screen');$('resultStats').hidden=true;state='paused';updateSurfHUD();updateMilkHUD();$('finalCountdown').hidden=true;syncMusic();keys.clear();stick.x=stick.y=0;$('knob').style.transform='';$('overlayTitle').textContent='香蕉休息中';$('overlayText').textContent=characterScale()<1?'左側搖桿移動 · 右側跳踩／衝刺／衝浪':'移動：WASD／方向鍵 · 跳踩：空白鍵 · 衝刺：J · 衝浪：K';$('start').innerHTML='繼續蹦跳 <span>↗</span>';$('overlay').hidden=false;$('pause').textContent='▶';}else if(state==='paused'){$('home').hidden=true;$('overlay').classList.remove('intro-screen');state='playing';syncMusic();updateHUD();$('overlay').hidden=true;$('pause').textContent='Ⅱ';canvas.focus();}}
+// Keep the original menu copy in one place: the HTML.
+const mainMenuCopy={title:$('overlayTitle').innerHTML,text:$('overlayText').innerHTML,foot:$('overlayFoot').textContent};
+function returnToMainMenu(){
+  if(state!=='paused'&&state!=='over')return;
+  // Save a recording before clearing the world or changing its terminal state.
+  if(typeof stopAgentRun==='function')stopAgentRun();else stopSimulation();
+  clearMilkJetInput();keys.clear();stickPointer=null;stick.x=stick.y=0;$('knob').style.transform='';
+  mobilePlayPending=null;mobilePlayRequested=false;mobilePlayBlocked=false;$('mobileGate').hidden=true;
+  state='intro';resetBoxState();resetMilkStage();resetSurf();boss=null;bossShots=[];bossClones=[];bossElapsed=0;
+  enemies=[];peels=[];particles=[];texts=[];pickups=[];orbitPeels=[];durianWarnings=[];spawnWarnings=[];spawnDueWaves=0;special=null;
+  elapsed=0;endElapsed=0;shake=0;noticeLife=0;comboLife=0;combo=0;charge=0;kills=0;player=newPlayer();
+  $('arena').classList.remove('playing','ended');document.body?.classList.remove('game-active');
+  $('overlay').classList.remove('ending','victory');$('overlay').classList.add('intro-screen');
+  $('overlayTitle').innerHTML=mainMenuCopy.title;$('overlayText').innerHTML=mainMenuCopy.text;$('overlayText').hidden=false;$('overlayFoot').textContent=mainMenuCopy.foot;
+  $('resultStats').hidden=true;$('modeOptions').hidden=false;$('debugOptions').hidden=!debugUnlocked;
+  $('start').innerHTML='開始蹦跳 <span>↗</span>';$('start').disabled=false;
+  $('keyboardStartHint').hidden=false;$('keyboardStartHint').textContent='按 SPACE 開始遊戲';
+  $('endWipe').hidden=true;$('finalCountdown').hidden=true;$('bossBanner').hidden=true;$('home').hidden=true;$('overlay').hidden=false;$('pause').textContent='Ⅱ';
+  canvas.style.objectFit='';resize();updateHUD();syncMusic();$('start').focus();
+}
+$('home').addEventListener('click',returnToMainMenu);
 // Mobile sessions require landscape; use native fullscreen where the browser supports it.
 let mobilePlayBlocked=false,mobilePlayRequested=false,mobilePlayPending=null;
 function mobileViewportStatus(){
@@ -1103,7 +1127,7 @@ async function enterMobilePlay(){
 }
 function startRequested(){
   if(state==='over'&&endElapsed<2)return;
-  const action=()=>state==='paused'?pause():reset();
+  const action=()=>state==='paused'?pause():typeof startControlledGame==='function'?startControlledGame():reset();
   if(characterScale()>=1){action();return;}
   unlockAudio();mobilePlayPending=action;enterMobilePlay();
 }
@@ -1142,8 +1166,9 @@ function handleDebugCode(e){
 }
 function gameKey(e){const physical={KeyW:'w',KeyA:'a',KeyS:'s',KeyD:'d',KeyJ:'j',KeyK:'k',KeyP:'p',Space:' ',ArrowUp:'arrowup',ArrowDown:'arrowdown',ArrowLeft:'arrowleft',ArrowRight:'arrowright',Escape:'escape'};return physical[e.code]||(e.key||'').toLowerCase();}
 function handleKeyDown(e){
+  if(simulationSession?.active&&state==='playing'&&!['p','escape'].includes(gameKey(e)))return;
   if(e.metaKey||e.ctrlKey||e.altKey||e.target===$('volume')||e.target===$('sound')||e.target===$('debugStart')||e.target===$('debugInvincible'))return;
-  if(['INPUT','TEXTAREA','SELECT'].includes(e.target?.tagName))return;
+  if(e.target===$('home')||['INPUT','TEXTAREA','SELECT'].includes(e.target?.tagName))return;
   if(handleDebugCode(e)){e.preventDefault();return;}
   const k=gameKey(e);if(!['w','a','s','d','j','k','p',' ','arrowup','arrowdown','arrowleft','arrowright','escape'].includes(k))return;
   if(k===' '&&characterScale()>=1&&(state==='intro'||state==='over')){
@@ -1156,10 +1181,10 @@ function handleKeyUp(e){keys.delete(gameKey(e));}
 window.addEventListener('keydown',handleKeyDown,true);window.addEventListener('keyup',handleKeyUp,true);
 canvas.addEventListener('pointerdown',()=>{canvas.focus();unlockAudio();});
 window.addEventListener('blur',()=>{keys.clear();if(state==='playing')pause();});document.addEventListener('visibilitychange',()=>{if(document.hidden&&state==='playing')pause();});
-function startMilkJetTouch(e){e.preventDefault();if(state!=='playing'||isBossWorldFrozen())return;milkJetTouch=e.pointerId;$('jumpTouch').setPointerCapture(e.pointerId);jump();}
+function startMilkJetTouch(e){e.preventDefault();if(simulationSession?.active)return;if(state!=='playing'||isBossWorldFrozen())return;milkJetTouch=e.pointerId;$('jumpTouch').setPointerCapture(e.pointerId);jump();}
 function releaseMilkJetTouch(e){if(e.pointerId===milkJetTouch)clearMilkJetInput();}
-$('jumpTouch').addEventListener('pointerdown',startMilkJetTouch);['pointerup','pointercancel','lostpointercapture'].forEach(event=>$('jumpTouch').addEventListener(event,releaseMilkJetTouch));$('specialTouch').addEventListener('pointerdown',e=>{e.preventDefault();activate();});
-$('surfUse').addEventListener('pointerdown',e=>{e.preventDefault();activateSurf();});
-function moveStick(e){const b=$('stick').getBoundingClientRect(),dx=e.clientX-b.left-b.width/2,dy=e.clientY-b.top-b.height/2,d=Math.hypot(dx,dy),r=b.width*.3;stick.x=dx/Math.max(r,d);stick.y=dy/Math.max(r,d);$('knob').style.transform=`translate(${stick.x*r}px,${stick.y*r}px)`;}
+$('jumpTouch').addEventListener('pointerdown',startMilkJetTouch);['pointerup','pointercancel','lostpointercapture'].forEach(event=>$('jumpTouch').addEventListener(event,releaseMilkJetTouch));$('specialTouch').addEventListener('pointerdown',e=>{e.preventDefault();if(!simulationSession?.active)activate();});
+$('surfUse').addEventListener('pointerdown',e=>{e.preventDefault();if(!simulationSession?.active)activateSurf();});
+function moveStick(e){if(simulationSession?.active)return;const b=$('stick').getBoundingClientRect(),dx=e.clientX-b.left-b.width/2,dy=e.clientY-b.top-b.height/2,d=Math.hypot(dx,dy),r=b.width*.3;stick.x=dx/Math.max(r,d);stick.y=dy/Math.max(r,d);$('knob').style.transform=`translate(${stick.x*r}px,${stick.y*r}px)`;}
 $('stick').addEventListener('pointerdown',e=>{e.preventDefault();if(stickPointer!==null)return;stickPointer=e.pointerId;$('stick').setPointerCapture(e.pointerId);moveStick(e);});$('stick').addEventListener('pointermove',e=>{if(e.pointerId===stickPointer)moveStick(e);});function releaseStick(e){if(e.pointerId!==stickPointer)return;stickPointer=null;stick.x=stick.y=0;$('knob').style.transform='';}['pointerup','pointercancel','lostpointercapture'].forEach(event=>$('stick').addEventListener(event,releaseStick));
-function frame(now){const rawDt=Math.max(0,(now-previous)/1000),dt=Math.min(rawDt,.033);previous=now;if(state==='playing')update(isBossWorldFrozen()?rawDt:dt);else if(state==='over')tickEnding(rawDt);render();requestAnimationFrame(frame);}resize();updateHUD();loadGameAssets();requestAnimationFrame(frame);
+function frame(now){const rawDt=Math.max(0,(now-previous)/1000),dt=Math.min(rawDt,.033);previous=now;if(state==='playing'){if(typeof advanceAgentFrame==='function'&&simulationSession?.active)advanceAgentFrame(rawDt);else update(isBossWorldFrozen()?rawDt:dt);}else if(state==='over')tickEnding(rawDt);render();requestAnimationFrame(frame);}if(simulationHeadless){assetsReady=true;state='intro';sound=false;resize();}else{resize();updateHUD();loadGameAssets();requestAnimationFrame(frame);}

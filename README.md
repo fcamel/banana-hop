@@ -13,6 +13,7 @@
 - [AGENTS.md](AGENTS.md)：任何 agent 開新 session 時應遵守的工作慣例。
 - [DEPLOYMENT.md](DEPLOYMENT.md)：版號、驗證、commit／push／GitHub Pages 發布與失敗處理。
 - [CHANGELOG.md](CHANGELOG.md)：各版本的重要更新與重大 Bug 修正。
+- [SIMULATION.md](SIMULATION.md)：AI 自動操作、無畫面模擬、訓練介面與 Replay。
 
 預設只做 local 開發。明確要求發布時才進行對應動作；版號預設升 patch，詳見發布文件。
 
@@ -24,13 +25,15 @@
 npm start
 ```
 
-開啟 <http://127.0.0.1:8893/>。等同：
+開啟 <http://127.0.0.1:8893/>。AI／Replay 是預設關閉的開發功能；本機測試請明確啟用：
 
 ```sh
-python3 -m http.server 8893 --bind 127.0.0.1 --directory dist
+BANANA_AI_REPLAY=1 npm start
 ```
 
-手機遊玩可將 bind 改為 `0.0.0.0`，以手機開啟電腦區網 IP。手機需橫向遊玩，支援的瀏覽器需進全螢幕。若該瀏覽器要求安全來源才能使用全螢幕／方向鎖定，改用 HTTPS 測試；未支援原生全螢幕時採滿版網頁。
+local server 只在記憶體回傳啟用設定，不改寫 `dist/features.js`；GitHub Pages 部署保持關閉。主選單、暫停、結算畫面的入口皆受相同開關控制。
+
+手機遊玩可用 `BANANA_AI_REPLAY=1 python3 scripts/serve.py --bind 0.0.0.0`，以手機開啟電腦區網 IP。手機需橫向遊玩，支援的瀏覽器需進全螢幕。若該瀏覽器要求安全來源才能使用全螢幕／方向鎖定，改用 HTTPS 測試；未支援原生全螢幕時採滿版網頁。
 
 ## 操作與測試
 

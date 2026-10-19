@@ -37,6 +37,8 @@ jobs:
         run: npm run check
       - name: Run game tests
         run: npm test
+      - name: Verify published development features stay disabled
+        run: python3 scripts/serve.py --check-features
       - name: Upload static site
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3

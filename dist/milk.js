@@ -51,7 +51,7 @@ function sliceGoal(e){
   let bottle=null,gap=Infinity;
   for(const b of milkBottles){const d=dist(e,b);if(d<gap){bottle=b;gap=d;}}
   const playerGap=dist(e,player),total=playerGap+gap,bottleChance=total>0?playerGap/total:.5;
-  if(bottle&&Math.random()<bottleChance){e.sliceGoal='bottle';e.sliceBottleId=bottle.id;return bottle;}
+  if(bottle&&gameRandom()<bottleChance){e.sliceGoal='bottle';e.sliceBottleId=bottle.id;return bottle;}
   e.sliceGoal='player';e.sliceBottleId=null;return player;
 }
 function sliceAtTargetBottle(e){
@@ -143,14 +143,14 @@ function resetMilkStage(){sliceRallies=[];milkBottleRevision=0;milkBottles=[];mi
 function spawnMilkBottle(point=null){
   if(milkBottles.length>=milkRules.bottleLimit)return null;
   if(!point){
-    const a=Math.random()*TAU,r=Math.min(240,W*.28,H*.3/.72);
+    const a=gameRandom()*TAU,r=Math.min(240,W*.28,H*.3/.72);
     point={x:player.x+Math.cos(a)*r,y:player.y+Math.sin(a)*r};
   }
   const bottle={id:serial++,x:clamp(point.x,-arenaSize+50,arenaSize-50),y:clamp(point.y,-arenaSize+50,arenaSize-50),age:0};
   milkBottles.push(bottle);milkBottleRevision++;return bottle;
 }
 function spawnMilkPair(){
-  const angle=Math.random()*TAU;
+  const angle=gameRandom()*TAU;
   for(const side of [0,1]){
     let point=null;
     for(const radius of [320,500,750,1100,1600,2200]){
@@ -283,7 +283,7 @@ function updateMilkStage(dt,path){
   // Grounded player pickups win ties; airborne players cannot steal a bottle.
   collectMilkBottles(path);updateMilkClaims(dt);updateMilkSpray(dt);
 }
-function updateMilkHUD(){
+function updateMilkHUD(){if(simulationHeadless)return;
   const label=milkPack?'噴射':'跳踩';if(label!==milkTouchLabel){$('jumpTouch').innerHTML=`↑<small>${label}</small>`;milkTouchLabel=label;}
   const gauge=$('milkGauge');gauge.hidden=!milkStage||!milkPack||state!=='playing';
   if(gauge.hidden)return;

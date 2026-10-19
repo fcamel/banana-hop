@@ -1,6 +1,6 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const elements=new Map();const element=id=>{if(!elements.has(id))elements.set(id,{style:{},hidden:false,classList:{add(){},remove(){}},textContent:'',innerHTML:'',addEventListener(){},setAttribute(){},focus(){},getBoundingClientRect:()=>({width:1000,height:650,left:0,top:0}),setPointerCapture(){}});return elements.get(id);};
-const context={console,Math,Set,setTimeout,clearTimeout,Image:class{constructor(){this.complete=true;this.naturalWidth=64;this.naturalHeight=64;}decode(){return Promise.resolve();}},devicePixelRatio:1,document:{getElementById:element,addEventListener(){},createElement:()=>({getContext:()=>({drawImage(){},createRadialGradient(){return {addColorStop(){}};},beginPath(){},ellipse(){},fill(){}})})},window:{addEventListener(){}},ResizeObserver:class{observe(){}},requestAnimationFrame(){}};element('game').getContext=()=>({setTransform(){}});vm.createContext(context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/boss.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/surf.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/milk.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/entrance.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/giant.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/game.js','utf8'),context);// Combat tests bypass the opening; entrance coverage explicitly calls reset(true).
+const context={console,Math,Set,setTimeout,clearTimeout,Image:class{constructor(){this.complete=true;this.naturalWidth=64;this.naturalHeight=64;}decode(){return Promise.resolve();}},devicePixelRatio:1,document:{getElementById:element,addEventListener(){},createElement:()=>({getContext:()=>({drawImage(){},createRadialGradient(){return {addColorStop(){}};},beginPath(){},ellipse(){},fill(){}})})},window:{addEventListener(){}},ResizeObserver:class{observe(){}},requestAnimationFrame(){}};element('game').getContext=()=>({setTransform(){}});vm.createContext(context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/control.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/boss.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/surf.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/milk.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/entrance.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/giant.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/../dist/game.js','utf8'),context);// Combat tests bypass the opening; entrance coverage explicitly calls reset(true).
 vm.runInContext('const productionReset=reset;reset=(showEntrance=false)=>productionReset(showEntrance)',context);
 const run=s=>vm.runInContext(s,context);
 function test(name,body){body();console.log('PASS',name);}
@@ -220,6 +220,27 @@ test('A sliding player remains vulnerable when a fallen enemy gets back up',()=>
   run('update(.06)');assert.equal(run('wakingEnemy.down'),0);assert.ok(run('player.down')>0);assert.equal(run('player.hp'),4);assert.ok(run('player.inv')>0);
 });
 test('Every enemy type slips on peels without losing health',()=>{for(const type of ['normal','thick','durian']){run(`reset();player.x=500;spawnClock=100;enemies=[{id:3,x:0,y:0,hp:2,type:'${type}',hit:0,speed:0,knock:0}];peels=[{x:0,y:0,age:1}];update(.01)`);assert.equal(run('enemies[0].down'),.7);run('for(let i=0;i<70;i++)update(.01)');assert.ok(run('enemies[0].x')>200);assert.equal(run('enemies[0].hp'),2);assert.equal(run('enemies[0].down'),0);}});
+test('Pause and both results share immediate home navigation and clear the old session',()=>{
+  for(const outcome of ['pause',false,true]){
+    run('reset()');assert.equal(element('home').hidden,true);
+    if(outcome==='pause')run('pause()');else run('finish('+outcome+')');
+    assert.equal(element('home').hidden,false);
+    run("keys.add('w');stick.x=1;mobilePlayRequested=true;mobilePlayPending=()=>{throw Error('stale mobile start')};returnToMainMenu()");
+    assert.equal(run('state'),'intro');assert.equal(element('home').hidden,true);
+    assert.equal(element('overlay').hidden,false);assert.equal(element('modeOptions').hidden,false);
+    assert.equal(element('resultStats').hidden,true);assert.equal(element('endWipe').hidden,true);
+    assert.equal(element('start').disabled,false);assert.equal(run('keys.size'),0);
+    assert.equal(run('stick.x'),0);assert.equal(run('enemies.length'),0);
+    assert.equal(run('mobilePlayPending'),null);assert.equal(run('mobilePlayRequested'),false);
+    assert.equal(run('boss'),null);assert.equal(run('giantBattle'),null);
+    run('reset()');assert.equal(run('state'),'playing');
+  }
+});
+test('Home button keeps native keyboard activation without triggering gameplay shortcuts',()=>{
+  run('reset();pause()');context.homeKeyEvent={target:element('home'),code:'Space',key:' ',preventDefault(){throw Error('native button key intercepted');}};
+  run('handleKeyDown(homeKeyEvent)');assert.equal(run('state'),'paused');assert.equal(run('keys.size'),0);
+  run('returnToMainMenu()');
+});
 test('Pause freezes gameplay and resumes; restart clears state',()=>{run('reset();pause()');assert.equal(run('state'),'paused');run('pause()');assert.equal(run('state'),'playing');run('charge=180;kills=7;reset()');assert.equal(run('charge'),0);assert.equal(run('kills'),0);});
 test('Surviving 120 seconds freezes existing minions and starts the boss entrance',()=>{run('reset();elapsed=119.99;var oldMinions=enemies.length;durianWarnings=[{x:0,y:0,at:121}];update(.02)');assert.equal(run('state'),'playing');assert.equal(run('elapsed'),120);assert.equal(run('boss.hp'),10);assert.equal(run('boss.phase'),'entrance');assert.equal(run('boss.time'),3);assert.equal(run('enemies.length'),run('oldMinions'));assert.equal(run('durianWarnings.length'),1);assert.equal(element('gameClock').hidden,true);assert.equal(element('bossHud').hidden,false);});
 test('Survival and boss simulation stay finite and capped without automatic victory',()=>{run('reset();for(let i=0;i<8400&&state==="playing";i++){player.inv=2;update(1/60)}');assert.equal(run('state'),'playing');assert.ok(run('boss.hp')>0);assert.ok(run('enemies.length')<=110);assert.ok(run('Number.isFinite(player.x)&&Number.isFinite(player.y)'));});
@@ -907,6 +928,16 @@ milkTest('Milk pairs and later supplies stay at least 500 apart, including near 
 milkTest('蕉片崛起 starts at sixty seconds, uses slice minions and transitions to its own giant battle',()=>{
   assert.equal(run('roundDuration()'),60);assert.equal(element('timer').textContent,'01:00');assert.equal(run('enemies.length'),2);assert.equal(run('milkPopulation()'),6);assert.ok(run("enemies.every(e=>e.type==='slice'&&e.hp===3&&e.stackCount===3)"));assert.equal(run('milkBottles.length'),2);
   run('enemies=[];spawnClock=999;elapsed=59.99;update(.02)');assert.equal(run('state'),'playing');assert.equal(run('elapsed'),60);assert.equal(run('boss'),null);assert.ok(run('giantBattle'));assert.equal(run('liveGiants().length'),2);
+});
+milkTest('Rule AI avoids actual swept slice flight and airborne hop contacts without changing damage',()=>{
+  for(const motion of ['flight','hop']){
+    context.dodgeMotion=motion;
+    for(const controlled of [false,true]){
+      context.useDodgeAI=controlled;
+      run("var dodgeEnv=createSimulation({mode:'milk',seed:7,entrance:false});enemies=[];milkBottles=[];spawnClock=999;nextMilkAt=999;spawnMilkBottle({x:300,y:0});var dodgeEnemy=spawn(0,'slice',{x:dodgeMotion==='flight'?-130:90,y:0});if(dodgeMotion==='flight'){dodgeEnemy.z=20;dodgeEnemy.sliceFlight={t:0,ax:-130,ay:0,bx:170,by:0,startZ:20,duration:300/460};}else{player.z=10;player.vz=200;dodgeEnemy.z=35;dodgeEnemy.sliceHop={t:.18,ax:126,ay:0,bx:0,by:0};}var dodgeAction={x:1};for(var dodgeStep=0;dodgeStep<30;dodgeStep++){if(useDodgeAI&&dodgeStep%6===0)dodgeAction=dodgeEnv.policy(dodgeEnv.observe());dodgeEnv.step(dodgeAction);}var dodgeHp=player.hp;stopSimulation()");
+      assert.equal(run('dodgeHp'),controlled?5:4,motion+' controlled='+controlled);
+    }
+  }
 });
 milkTest('Milk pickup equips a fuel-limited bottle jet without healing, charge or invulnerability',()=>{
   run('enemies=[];milkBottles=[];player.hp=3;charge=25;spawnMilkBottle({x:0,y:0});updateMilkStage(.01,null)');

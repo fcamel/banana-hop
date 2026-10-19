@@ -76,7 +76,7 @@ function beginBossMove(actor=boss){
     const moves=canRevive?['sea-aim','revive','fire-aim']:['sea-aim','fire-aim'];
     if(bossElapsed>=actor.nextShield)moves.push('shield-aim');
     if(actor===boss&&bossElapsed>=actor.nextTeleport)moves.push('teleport-aim');
-    move=moves[Math.floor(Math.random()*moves.length)];
+    move=moves[Math.floor(gameRandom()*moves.length)];
   }else if(boss.hp<=6&&bossElapsed>=actor.nextShield)move='shield-aim';
   else if(actor===boss&&boss.hp<=7&&bossElapsed>=actor.nextTeleport)move='teleport-aim';
   else{do{move=['sea-aim','revive','fire-aim'][actor.move++%3];}while(move==='revive'&&!canRevive);}
@@ -293,7 +293,7 @@ function hitBoss(target,isStomp){
     if(boss.hp<=2)boss.nextClone=Math.max(bossElapsed,boss.nextClone)+1;
     boss.hit=4;boss.phase='stunned';boss.time=.65;boss.fireRows=0;boss.knock=.4;boss.kx=-Math.cos(a)*260*characterScale();boss.ky=-Math.sin(a)*260*characterScale();
     if(boss.hp<=2&&bossClones.length){
-      const promoted=bossClones.splice(Math.floor(Math.random()*bossClones.length),1)[0];boss.x=promoted.x;boss.y=promoted.y;boss.knock=0;kills++;if(isStomp)stats.stompKills++;notify('分身繼承本尊！');
+      const promoted=bossClones.splice(Math.floor(gameRandom()*bossClones.length),1)[0];boss.x=promoted.x;boss.y=promoted.y;boss.knock=0;kills++;if(isStomp)stats.stompKills++;notify('分身繼承本尊！');
     }else{
       boss.hp--;
       if(boss.hp<=0){kills++;if(isStomp)stats.stompKills++;bossShots=[];finish(true);}
@@ -532,7 +532,7 @@ function drawBossShots(){
   if(!bossShots.length)return;if(!bossFireSprite)prepareBossFireSprite();
   for(const shot of bossShots){if(!isInView(shot,40,bossFireZ))continue;const p=screen(shot.x,shot.y,bossFireZ);ctx.drawImage(bossFireSprite,p.x-25,p.y-25,50,50);}
 }
-function updateBossHUD(){
+function updateBossHUD(){if(simulationHeadless)return;
   const giantBanner=isGiantNameEntrance();
   const banner=boss?.phase==='entrance-banner'||giantBanner;$('bossBanner').hidden=!banner;
   $('bossBannerTitle').textContent=giantBanner?'進擊的蕉巨':'腐蕉大法師';

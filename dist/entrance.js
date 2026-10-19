@@ -4,7 +4,7 @@ const boxRules={entranceDuration:2.4,dropDuration:1.3/1.5,launchDelay:.55,jumpDu
 const boxEase=u=>{u=clamp(u,0,1);return u*u*(3-2*u);};
 function resetBoxState(){boxSequence=null;}
 function populateRound(){
-  for(let i=0;i<(milkStage?2:7);i++){const radius=180+Math.random()*180;if(milkStage)spawnSliceStack(radius);else spawn(radius);}
+  for(let i=0;i<(milkStage?2:7);i++){const radius=180+gameRandom()*180;if(milkStage)spawnSliceStack(radius);else spawn(radius);}
   if(milkStage)spawnMilkPair();
   trackBattlePeaks();
 }

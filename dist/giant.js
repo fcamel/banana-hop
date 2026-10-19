@@ -95,7 +95,7 @@ function beginGiantSkyDrop(g){
   else if(g.landingRole==='retreat'){
     const corners=[{x:b.left,y:b.top},{x:b.right,y:b.top},{x:b.left,y:b.bottom},{x:b.right,y:b.bottom}];
     g.jumpLanding=corners.reduce((best,p)=>dist(p,player)>dist(best,player)?p:best,corners[0]);
-  }else g.jumpLanding={x:b.left+Math.random()*(b.right-b.left),y:b.top+Math.random()*(b.bottom-b.top)};
+  }else g.jumpLanding={x:b.left+gameRandom()*(b.right-b.left),y:b.top+gameRandom()*(b.bottom-b.top)};
 }
 function giantBodyScattered(g){return g.attackPhase==='out'||g.attackPhase==='return';}
 function updateGiantAttack(g,dt){

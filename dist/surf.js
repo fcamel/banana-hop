@@ -19,7 +19,7 @@ function spawnSurfPickup(point=null){
   surfPickups.push({id:serial++,x:clamp(point.x,-arenaSize+35,arenaSize-35),y:clamp(point.y,-arenaSize+35,arenaSize-35),age:0});
   burst(point.x,point.y,'#a8ded2',8);
 }
-function updateSurfHUD(){
+function updateSurfHUD(){if(simulationHeadless)return;
   const surfing=special?.mode==='surf'&&!isBossWorldFrozen()&&state==='playing';
   $('surfGauge').hidden=!surfing;
   if(surfing){
