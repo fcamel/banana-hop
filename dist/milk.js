@@ -110,12 +110,12 @@ function moveSliceHop(e,dt,target){
   if(e.sliceGoal==='bottle'&&dist(e,target)<24*characterScale())return;
   e.sliceHopWait=Math.max(0,(e.sliceHopWait||0)-dt);if(e.sliceHopWait>0)return;
   const dx=target.x-e.x,dy=target.y-e.y,d=Math.hypot(dx,dy)||1,travel=Math.min(d,e.speed*milkPressure().stride);
-  e.sliceHop={t:0,ax:e.x,ay:e.y,bx:clamp(e.x+dx/d*travel,-arenaSize+35,arenaSize-35),by:clamp(e.y+dy/d*travel,-arenaSize+35,arenaSize-35)};
+  e.sliceHop={t:0,ax:e.x,ay:e.y,bx:clamp(e.x+dx/d*travel,-arenaSize,arenaSize),by:clamp(e.y+dy/d*travel,-arenaSize,arenaSize)};
   moveSliceHop(e,Math.min(dt,sliceRules.hopDuration),target);
 }
 function launchSliceFlight(e,startZ){
   const angle=Math.atan2(player.y-e.y,player.x-e.x),reach=dist(e,player)+sliceRules.overshoot*characterScale();
-  const bx=clamp(e.x+Math.cos(angle)*reach,-arenaSize+35,arenaSize-35),by=clamp(e.y+Math.sin(angle)*reach,-arenaSize+35,arenaSize-35);
+  const bx=clamp(e.x+Math.cos(angle)*reach,-arenaSize,arenaSize),by=clamp(e.y+Math.sin(angle)*reach,-arenaSize,arenaSize);
   e.sliceFlight={t:0,ax:e.x,ay:e.y,bx,by,startZ,duration:Math.max(sliceRules.flightMinDuration,Math.hypot(bx-e.x,by-e.y)/sliceRules.flightSpeed)};e.z=startZ;
 }
 function moveSliceFlight(e,dt){

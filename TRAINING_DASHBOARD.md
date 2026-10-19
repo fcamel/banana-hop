@@ -1,6 +1,6 @@
 # 本機訓練觀察室
 
-這是訓練結果的記錄與觀看工具，尚未包含 NN／PPO 訓練器。可接入未來訓練迴圈；每代代表一次模型更新後、用固定 seeds 進行的一組評估，不是單一 episode。
+這是訓練結果的記錄與觀看工具，已接上 `npm run training:nn` 的 CPU NN／PPO 訓練器，使用方式見 [NN_TRAINING.md](NN_TRAINING.md)。第一代是未更新的 NN 基準；之後每代代表一次模型更新後、用固定 seeds 進行的一組評估，不是單一 episode。
 
 ## 開啟
 
@@ -75,4 +75,4 @@ result = TrainingStore().record_generation(generation_record, representative_rep
 
 相同 runId 不允許變更遊戲來源、評估 seeds 或 `config`；需另開 runId，避免無法比較的分數混成一條曲線。檔案寫入時檢查 Replay 來源版本、格式、seed 及單局分數；播放時再實際重演並驗證最終狀態。舊版本 Replay 保留下載，但儀表板停用直接播放，需切回對應 commit。
 
-本工具不替訓練器驗證模型是否為 NN，也不保證上報平均分數可信；`trainer` 應據實填寫，評估與 survival-only 的規則需由訓練器實作。訓練規劃見 [NN_TRAINING.md](NN_TRAINING.md)，現有模擬 API 見 [SIMULATION.md](SIMULATION.md)。
+本工具不替訓練器驗證模型是否為 NN，也不保證上報平均分數可信；`trainer` 應據實填寫，評估與 survival-only 的規則需由訓練器實作。訓練方式見 [NN_TRAINING.md](NN_TRAINING.md)，現有模擬 API 見 [SIMULATION.md](SIMULATION.md)。

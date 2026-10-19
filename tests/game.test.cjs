@@ -13,6 +13,12 @@ test('Main and debug menus use only the independent 蕉片崛起 and 蕉皮末�
   assert.deepEqual(options('debugStart'),[['62','蕉皮末日: 62s'],['32','蕉皮末日: 32s'],['12','蕉皮末日: 12s'],['boss-5','蕉皮末日 (魔王戰) : 魔王剩 5 血'],['boss-2','蕉皮末日 (魔王戰) : 魔王剩 2 血']]);
   assert.doesNotMatch(html,/試作|試玩|原版|第一關|第二關/i);
 });
+test('Survival-only simulation finishes the milk stage without changing the normal boss transition',()=>{
+  run("simulationConfig={mode:'milk',width:1000,height:650,mobile:false,entrance:false,survivalOnly:true};$('gameMode').value='milk';reset();elapsed=60-1/60;update(1/60)");
+  assert.equal(run('state'),'over');assert.equal(run('giantBattle'),null);assert.equal(run('elapsed'),60);
+  run("simulationConfig=null;$('gameMode').value='milk';reset();elapsed=60-.01;update(.02)");assert.ok(run('giantBattle'));assert.equal(run('state'),'playing');
+  run("$('gameMode').value='survival';reset();state='intro'");
+});
 test('Initial asset loading finishes before opening the main menu',()=>{assert.equal(run('assetsReady'),true);assert.equal(run('state'),'intro');assert.equal(element('start').disabled,false);assert.equal(element('loadingScreen').hidden,true);assert.ok(run('!!mutedFloor'));});
 test('Every delivered game image is used, has its PNG source, and is available to the loader',()=>{
   const assets=__dirname+'/../dist/assets/';
@@ -296,6 +302,23 @@ test('Red peel remains an active ground hazard after finishing flight',()=>{run(
 test('Enemy near the player keeps facing through small left-right jitter',()=>{run("reset();enemies=[];const stable=spawn(0,'normal',{x:-10,y:0});for(let i=0;i<60;i++){stable.x=i%2?-10:10;elapsed+=.02;updateEnemyFacing(stable);if(stable.facing!==1)throw Error('near-player facing flicker');}");});
 test('Enemy turns across the dead zone with a minimum turn interval',()=>{run('stable.x=50;elapsed+=1;updateEnemyFacing(stable)');assert.equal(run('stable.facing'),-1);run('stable.x=-50;elapsed+=.05;updateEnemyFacing(stable)');assert.equal(run('stable.facing'),-1);run('elapsed+=.2;updateEnemyFacing(stable)');assert.equal(run('stable.facing'),1);run('stable.down=.7;stable.x=100;elapsed+=1;updateEnemyFacing(stable)');assert.equal(run('stable.facing'),1);});
 test('Chasing enemy never overshoots a nearby player',()=>{run("reset();enemies=[];player.inv=2;const close=spawn(0,'normal',{x:-.5,y:0});close.speed=100;update(.03)");assert.equal(run('close.x'),0);run('update(.03)');assert.equal(run('close.x'),0);});
+test('All walking and charging banana enemies can hit grounded players at every arena edge and corner on desktop and mobile',()=>{
+  for(const mobile of [false,true])for(const [x,y] of [[1250,0],[-1250,0],[0,1250],[0,-1250],[1250,1250],[1250,-1250],[-1250,1250],[-1250,-1250]])for(const [type,hp] of [['normal',1],['normal',2],['normal',3],['charger',1]]){
+    Object.assign(context,{edgeMobile:mobile,edgeX:x,edgeY:y,edgeType:type,edgeHp:hp});
+    run("window.matchMedia=()=>({matches:edgeMobile});$('gameMode').value='survival';reset();enemies=[];peels=[];spawnClock=999;nextChargerAt=nextThrowerAt=nextDurianAt=nextPickupAt=999;player.x=edgeX;player.y=edgeY;var inwardX=edgeX?Math.sign(edgeX):0,inwardY=edgeY?Math.sign(edgeY):0;var edgeEnemy=spawn(0,edgeType,{x:edgeX-inwardX*120,y:edgeY-inwardY*120});edgeEnemy.hp=edgeHp;for(let frame=0;frame<600&&player.hp===5;frame++)update(1/60)");
+    assert.ok(run('player.hp')<5,`${type}/${hp}, mobile=${mobile}, at ${x},${y}`);
+    assert.ok(run('Math.abs(edgeEnemy.x)<=arenaSize+1e-6&&Math.abs(edgeEnemy.y)<=arenaSize+1e-6'));
+  }
+  run('delete window.matchMedia;reset()');
+});
+test('Ranged milk, red throwers and their durians can still attack the arena edges without broadening collision radii',()=>{
+  for(const mobile of [false,true])for(const [x,y] of [[1250,0],[-1250,0],[0,1250],[0,-1250],[1250,1250],[1250,-1250],[-1250,1250],[-1250,-1250]])for(const type of ['milk','thrower','durian','projectile']){
+    Object.assign(context,{edgeMobile:mobile,edgeX:x,edgeY:y,edgeType:type});
+    run("window.matchMedia=()=>({matches:edgeMobile});$('gameMode').value=edgeType==='milk'?'milk':'survival';reset();enemies=[];milkBottles=[];peels=[];milkDrops=[];spawnClock=999;nextMilkAt=nextChargerAt=nextThrowerAt=nextDurianAt=nextPickupAt=999;player.x=edgeX;player.y=edgeY;var inwardX=edgeX?Math.sign(edgeX):0,inwardY=edgeY?Math.sign(edgeY):0;var edgeEnemy=spawn(0,edgeType==='projectile'?'durian':edgeType,{x:edgeX-inwardX*180,y:edgeY-inwardY*180});if(edgeType==='milk'){edgeEnemy.hp=1;edgeEnemy.milkPhase='walk';edgeEnemy.milkTime=0;edgeEnemy.speed=62;}if(edgeType==='thrower'){edgeEnemy.throwCooldown=0;spawn(0,'durian',{x:edgeEnemy.x,y:edgeEnemy.y});}if(edgeType==='projectile')edgeEnemy.projectile={t:0,duration:.8,startZ:50,fromX:edgeEnemy.x,fromY:edgeEnemy.y,toX:edgeX,toY:edgeY};for(let frame=0;frame<600&&player.hp===5;frame++)update(1/60)");
+    assert.ok(run('player.hp')<5,`${type}, mobile=${mobile}, at ${x},${y}`);
+  }
+  run("$('gameMode').value='survival';delete window.matchMedia;reset()");
+});
 test('Health HUD renders five banana icons with filled and empty health states',()=>{run('reset();player.hp=3;updateHUD()');assert.equal((element('hearts').innerHTML.match(/health-banana filled/g)||[]).length,3);assert.equal((element('hearts').innerHTML.match(/health-banana empty/g)||[]).length,2);});
 test('Red banana charges in place for half a second and locks direction',()=>{run("reset();enemies=[];const charger=spawn(0,'charger',{x:-200,y:0});updateCharger(charger,.01)");assert.equal(run('charger.phase'),'aim');assert.equal(run('charger.phaseTime'),.5);run('player.y=100;updateCharger(charger,.49)');assert.equal(run('charger.phase'),'aim');assert.equal(run('charger.x'),-200);assert.equal(run('charger.aim'),0);run('updateCharger(charger,.02)');assert.equal(run('charger.phase'),'dash');assert.equal(run('charger.dashSpeed'),320);});
 test('Charging red banana accelerates and reaches the viewport edge before tumbling',()=>{run('updateCharger(charger,.1)');assert.ok(run('charger.dashSpeed')>320);assert.ok(run('charger.x')>-200);assert.equal(run('peels.length'),0);run('for(let i=0;i<100&&["dash","brake"].includes(charger.phase);i++)updateCharger(charger,.05)');assert.equal(run('charger.phase'),'turn');assert.equal(run('charger.x'),436);assert.equal(run('charger.down'),0);assert.equal(run('peels.length'),0);});
@@ -1117,10 +1140,18 @@ milkTest('Straight slice flight locks its overshoot endpoint and uses the origin
     run('moveMilkEnemy(straightSlice,straightLocked.duration*.5+.001)');assert.equal(run('straightSlice.sliceFlight'),null);assert.equal(run('straightSlice.x'),run('straightLocked.bx'));assert.equal(run('straightSlice.z'),0);
   }
 });
+milkTest('Hopping and fired slices reach players on every arena edge and corner at both character scales',()=>{
+  for(const mobile of [false,true])for(const [x,y] of [[1250,0],[-1250,0],[0,1250],[0,-1250],[1250,1250],[1250,-1250],[-1250,1250],[-1250,-1250]])for(const mode of ['hop','flight','stack']){
+    Object.assign(context,{edgeMobile:mobile,edgeX:x,edgeY:y,edgeMode:mode});
+    run("window.matchMedia=()=>({matches:edgeMobile});reset();enemies=[];milkBottles=[];milkDrops=[];peels=[];spawnClock=nextMilkAt=999;player.x=edgeX;player.y=edgeY;var inwardX=edgeX?Math.sign(edgeX):0,inwardY=edgeY?Math.sign(edgeY):0;var edgePoint={x:edgeX-inwardX*120,y:edgeY-inwardY*120};var edgeSlice=edgeMode==='stack'?spawnSliceStack(0,edgePoint):spawn(0,'slice',edgePoint);edgeSlice.sliceGoal='player';edgeSlice.sliceBottleRevision=milkBottleRevision;if(edgeMode==='flight')launchSliceFlight(edgeSlice,32);for(let frame=0;frame<600&&player.hp===5;frame++)update(1/60)");
+    assert.ok(run('player.hp')<5,`${mode}, mobile=${mobile}, at ${x},${y}`);
+    assert.ok(run('Math.abs(edgeSlice.x)<=arenaSize&&Math.abs(edgeSlice.y)<=arenaSize'));
+  }
+});
 milkTest('Straight projectiles stay inside the arena, freeze on pause and return to normal bottle seeking on landing',()=>{
-  run("enemies=[];milkBottles=[];player.x=1250;player.y=1250;var edgeShot=spawn(0,'slice',{x:1000,y:1000});launchSliceFlight(edgeShot,16)");assert.ok(run('Math.abs(edgeShot.sliceFlight.bx)<=arenaSize-35&&Math.abs(edgeShot.sliceFlight.by)<=arenaSize-35'));
+  run("enemies=[];milkBottles=[];player.x=1250;player.y=1250;var edgeShot=spawn(0,'slice',{x:1000,y:1000});launchSliceFlight(edgeShot,16)");assert.ok(run('Math.abs(edgeShot.sliceFlight.bx)<=arenaSize&&Math.abs(edgeShot.sliceFlight.by)<=arenaSize'));
   run('var straightPaused=edgeShot.sliceFlight.t;pause();update(1)');assert.equal(run('edgeShot.sliceFlight.t'),run('straightPaused'));run('pause();moveMilkEnemy(edgeShot,edgeShot.sliceFlight.duration)');assert.equal(run('edgeShot.sliceFlight'),null);
-  run("spawnMilkBottle({x:edgeShot.x,y:edgeShot.y});edgeShot.sliceGoal='bottle';edgeShot.sliceBottleId=milkBottles[0].id;edgeShot.sliceBottleRevision=milkBottleRevision;updateMilkClaims(.91)");assert.equal(run('edgeShot.type'),'milk');
+  run("spawnMilkBottle({x:edgeShot.x,y:edgeShot.y});edgeShot.sliceGoal='bottle';edgeShot.sliceBottleId=milkBottles[0].id;edgeShot.sliceBottleRevision=milkBottleRevision;for(let frame=0;frame<240&&edgeShot.type==='slice';frame++){moveMilkEnemy(edgeShot,1/60);updateMilkClaims(1/60);}");assert.equal(run('edgeShot.type'),'milk');
 });
 milkTest('Offscreen player-seeking slices rally into a pillar and resume straight firing without extra enemies or rewards',()=>{
   run("enemies=[];milkBottles=[];spawnClock=999;nextMilkAt=999;player.inv=99;serial=0;var rallyBase=spawn(0,'slice',{x:-800,y:0}),rallyA=spawn(0,'slice',{x:-740,y:0}),rallyB=spawn(0,'slice',{x:-680,y:0});for(const e of enemies)e.sliceGoal='player';updateOffscreenSliceRallies()");assert.equal(run('rallyBase.sliceRallyId'),run('rallyBase.id'));assert.equal(run('rallyA.sliceRallyId'),run('rallyBase.id'));

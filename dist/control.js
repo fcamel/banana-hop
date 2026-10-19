@@ -13,6 +13,8 @@ function gameRandom(){
 }
 function simulationOptions(options={}){
   const config={mode:options.mode??'milk',seed:options.seed??1,width:options.width??1000,height:options.height??650,mobile:options.mobile??false,entrance:options.entrance??true};
+  if(options.survivalOnly!==undefined&&typeof options.survivalOnly!=='boolean')throw Error('Invalid survival-only flag');
+  if(options.survivalOnly){if(config.mode!=='milk')throw Error('Survival-only training requires milk mode');config.survivalOnly=true;}
   if(!['milk','milk-boss','survival','boss'].includes(config.mode))throw Error('Unknown simulation mode');
   if(!Number.isInteger(config.seed)||config.seed<0||config.seed>0xffffffff)throw Error('Seed must be a uint32');
   for(const key of ['width','height'])if(!Number.isInteger(config[key])||config[key]<200||config[key]>4096)throw Error('Invalid simulation viewport');
@@ -29,7 +31,7 @@ function simulationObserve(){
   const cacheKeys=new Set(['gridX','gridY','gridIndex','peelGridOrder','peelGridQuery']);
   const copy=value=>JSON.parse(JSON.stringify(value,(key,v)=>cacheKeys.has(key)?undefined:v instanceof Set?Array.from(v):v));
   return copy({schema:simulationSchema,steps:simulationSession?.steps||0,time:elapsed,phase:boxSequence?'entrance':isBossWorldFrozen()?'ceremony':boss||giantBattle?'boss':'survival',state:state==='paused'&&simulationSession?'playing':state,
-    viewport:{width:W,height:H,scale:characterScale()},player:{...player,charge,surfStock,milkFuel:milkPack?.ammo||0,boosted:!!giantBattle&&(player.giantBoostUntil||0)>giantBattle.clock},kills,
+    viewport:{width:W,height:H,scale:characterScale()},player:{...player,charge,surfStock,milkFuel:milkPack?.ammo||0,boosted:!!giantBattle&&(player.giantBoostUntil||0)>giantBattle.clock},kills,special:special?{mode:special.mode,t:special.t,duration:special.duration}:null,
     enemies:enemies.filter(e=>e.hp>0),peels,pickups,surfPickups,milkBottles,milkDrops,spawnWarnings,durianWarnings,
     boss:boss?{...boss,clones:bossClones,shots:bossShots}:null,
     giants:liveGiants().map(g=>({...g,pads:giantPads(g),body:giantBodyParts(g)})),bossTime:giantBattle?.clock??bossElapsed});
@@ -81,12 +83,12 @@ function createSimulation(options={}){
       const action=simulationAction(input),tuple=actionTuple(action);let reward=0;
       for(let i=0;i<frames&&state==='playing';i++){
         if(record){if(lastTuple&&tuple.every((v,j)=>v===lastTuple[j]))segments[segments.length-1].frames++;else{segments.push({frames:1,action:tuple});lastTuple=tuple;}}
-        const beforeHp=player.hp,beforeKills=kills;keys.clear();stick.x=action.x;stick.y=action.y;
+        const beforeHp=player.hp,beforeKills=kills,beforeTime=elapsed;keys.clear();stick.x=action.x;stick.y=action.y;
         if(action.jet)keys.add(' ');if(action.jump)jump();if(action.dash)activate();if(action.surf)activateSurf();
         update(simulationDt);canonicalizeSimulationWorld();steps++;environment.steps=steps;
-        reward+=(kills-beforeKills)*.1+(player.hp-beforeHp)+(state==='over'?(player.hp>0?10:-10):.001);
+        reward+=config.survivalOnly?Math.max(0,elapsed-beforeTime):(kills-beforeKills)*.1+(player.hp-beforeHp)+(state==='over'?(player.hp>0?10:-10):.001);
       }
-      totalReward+=reward;return {observation:simulationObserve(),reward,terminated:state==='over',info:environment.summary()};
+      totalReward+=reward;return {observation:simulationObserve(),reward,terminated:state==='over',truncated:false,info:environment.summary()};
     },
     summary(){return {steps,seconds:steps*simulationDt,gameSeconds:elapsed,kills,hp:player.hp,outcome:state==='over'?(player.hp>0?'win':'loss'):'running',reward:totalReward};},
     replay(){

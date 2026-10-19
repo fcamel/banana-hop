@@ -3,7 +3,7 @@
 <body><main>
 <header><div><span class="eyebrow">BANANA HOP / LOCAL TRAINING</span><h1>訓練觀察室<span>↗</span></h1><p>追蹤每一代的進步，看看模型學會了什麼。</p></div><a class="game-link" href="/">回到遊戲 ↗</a></header>
 <section class="toolbar" aria-label="訓練選擇"><label>訓練紀錄 <select id="run"><option value="">尚無紀錄</option></select></label><button id="refresh">重新整理</button><span id="sync" role="status">準備連線…</span></section>
-<div id="empty" hidden><span>◎</span><h2>還沒有訓練紀錄</h2><p>接入訓練器後，每代分數會自動更新。<br>目前尚未啟動 NN 訓練器；這裡不會產生模擬的進步曲線。</p><p>記錄介面與範例：<code>TRAINING_DASHBOARD.md</code></p></div>
+<div id="empty" hidden><span>◎</span><h2>還沒有訓練紀錄</h2><p>執行 <code>npm run training:nn</code> 後，每代分數會自動更新。<br>只顯示實際評估結果，不產生模擬的進步曲線。</p><p>記錄介面與範例：<code>TRAINING_DASHBOARD.md</code></p></div>
 <div id="content" hidden>
 <section class="summary" aria-label="訓練摘要"><div><small>已完成代數</small><strong id="generations">—</strong></div><div><small>最佳平均存活</small><strong id="best">—</strong></div><div><small>最新平均存活</small><strong id="latest">—</strong></div><div><small>最新 60 秒達成率</small><strong id="success">—</strong></div></section>
 <section class="panel"><div class="panel-heading"><div><h2>分數的變化</h2><p id="run-info"></p></div><div class="legend"><span class="average">平均存活</span><span class="maximum">單局最高</span><span class="saved">● 保留 Replay</span></div></div><svg id="chart" viewBox="0 0 1000 290" role="img" aria-label="各代存活秒數折線圖"></svg><p class="note">分數為固定評估 seeds 的存活秒數，最高 60 秒。點選圓點可播放保留的場次。</p></section>

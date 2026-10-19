@@ -19,16 +19,22 @@ function ui(flag){
  await test('Disabled or absent flags hide every AI/Replay control and prevent browser AI startup despite checkbox changes',async()=>{
    for(const flag of [undefined,false,'true']){
      const {c,node,run}=ui(flag);assert.equal(node('aiOptions').hidden,true);assert.equal(node('agentStatus').hidden,true);
-     for(const id of ['autoAgent','agentSeed','recordAgent','downloadReplay','importReplay'])assert.equal(node(id).disabled,true);
+     for(const id of ['autoAgent','agentSeed','downloadReplay','importReplay'])assert.equal(node(id).disabled,true);
      assert.equal(node('downloadReplay').listeners.click,undefined);assert.equal(node('importReplay').listeners.change,undefined);
      await run('startControlledGame()');assert.equal(c.resets,1);assert.equal(run('agentRun'),null);
      run("agentMessage('AI should stay invisible')");assert.equal(node('agentStatus').textContent,'');
      run('agentRun={};advanceAgentFrame(.25)'); // Must exit before inspecting a simulation or input state.
    }
  });
+ await test('Manual games automatically record under the feature flag and reset only the previous tape at a new start',async()=>{
+   const {c,node,run}=ui(true);node('autoAgent').checked=false;run("lastAgentReplay={old:true};sourceDigestPromise=Promise.resolve('test-digest')");await run('startControlledGame()');
+   assert.equal(c.resets,0);assert.equal(run('agentRun.manual'),true);assert.equal(run('agentRun.recording'),true);assert.equal(run('lastAgentReplay'),null);
+   assert.equal(run('agentRun.environment.config.record'),true);
+   const html=fs.readFileSync(path.join(root,'dist/index.html'),'utf8');assert.doesNotMatch(html,/id="recordAgent"/);
+ });
  await test('Explicit flag enables all browser controls and permits seeded AI startup',async()=>{
    const {node,run}=ui(true);assert.equal(node('aiOptions').hidden,false);assert.equal(node('agentStatus').hidden,false);
-   for(const id of ['autoAgent','agentSeed','recordAgent','downloadReplay','importReplay'])assert.equal(node(id).disabled,false);
+   for(const id of ['autoAgent','agentSeed','downloadReplay','importReplay'])assert.equal(node(id).disabled,false);
    assert.equal(typeof node('downloadReplay').listeners.click,'function');assert.equal(typeof node('importReplay').listeners.change,'function');
    run("sourceDigestPromise=Promise.resolve('test-digest')");await run('startControlledGame()');assert.equal(run('agentRun.environment.config.seed'),17);assert.equal(run('agentRun.environment.config.record'),true);
  });

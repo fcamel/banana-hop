@@ -1,6 +1,6 @@
 # AI、快速模擬與 Replay
 
-瀏覽器遊戲、規則 AI 與 Node 模擬共用 `dist/` 的實際遊戲邏輯。沒有另寫簡化版碰撞或降低敵人數量；神經網路與訓練演算法尚未加入。
+瀏覽器遊戲、規則 AI 與 Node 模擬共用 `dist/` 的實際遊戲邏輯。沒有另寫簡化版碰撞或降低敵人數量；NN／PPO 訓練入口見 [NN_TRAINING.md](NN_TRAINING.md)。
 
 ## 瀏覽器操作
 
@@ -8,13 +8,13 @@
 
 未設定環境變數時，三個畫面的 AI／Replay 入口、狀態文字、錄製／下載／匯入與 AI 啟動均關閉；GitHub Pages 使用預設關閉的靜態設定。環境變數只影響瀏覽器功能，不限制下方的 Node 模擬 API／CLI。
 
-「記錄 Replay」預設關閉。需要檢視時才勾選，結束後按「下載 Replay」。也能用「播放 Replay」匯入由命令列產生的 JSON。P 可暫停；播放結束會核對錄製結果，出現不同步會停止並顯示錯誤。
+開啟開發旗標後，手動與 AI 每局都自動暫存 Replay，結束後按「下載 Replay」。開始新局才清除上局；暫停或回主選單仍保留，重新載入頁面會清除。也能用「播放 Replay」匯入由命令列產生的 JSON。P 可暫停；播放結束會核對錄製結果，出現不同步會停止並顯示錯誤。
 
 Replay 使用錄製時的邏輯 viewport 與手機倍率，畫面縮放呈現，因此在不同螢幕上播放不會改變出兵與碰撞規則。這是遊戲狀態重演；裝飾粒子、晃動與聲音不要求逐像素相同。
 
 ## 訓練結果儀表板
 
-開啟本機 `/training/` 可追蹤每代分數與點擊突破 Replay；提供 CLI、Python 與 HTTP 記錄介面，尚未包含 NN 訓練器。Replay 共用最多 100 檔／100 MB 配額，固定保留各次訓練的初代；分數歷史不輪替。設定與使用方式見 [TRAINING_DASHBOARD.md](TRAINING_DASHBOARD.md)。
+開啟本機 `/training/` 可追蹤每代分數與點擊突破 Replay；提供 CLI、Python 與 HTTP 記錄介面，`npm run training:nn` 的 PPO 訓練會自動寫入。Replay 共用最多 100 檔／100 MB 配額，固定保留各次訓練的初代；分數歷史不輪替。設定與使用方式見 [TRAINING_DASHBOARD.md](TRAINING_DASHBOARD.md)。
 
 ## 不繪圖模擬
 
@@ -56,13 +56,13 @@ while (env.summary().outcome === 'running' && env.summary().steps < 10800) {
 - `summary()`：步數、時間、血量、擊殺、勝負與累計 reward。
 - `replay()`：僅 `record: true` 可用；一般訓練不建立動作歷史。
 
-Reward 是可替換的基準訊號，不是遊戲分數或既定最優目標。現行定義請見 [GAMEPLAY.md](GAMEPLAY.md)。先維持結構化介面，之後可加 Python／模型推論的連線層；目前沒有模型載入、梯度訓練或跨程序通訊協定。
+Reward 是可替換的基準訊號，不是遊戲分數或既定最優目標。現行定義請見 [GAMEPLAY.md](GAMEPLAY.md)。先維持結構化介面，之後可加 Python／模型推論的連線層；NN 專用契約、PPO 與批次 worker 已在 `sim/training.cjs`、`sim/ppo.cjs` 和 `sim/training-worker.cjs` 實作。`survivalOnly:true` 僅允許 milk，60 秒直接結束，reward 替換為有效存活秒數，step 回傳 `truncated:false`；呼叫端提早截斷仍須另外標記並 bootstrap。
 
-每個 Node environment 有獨立 VM，可在呼叫端分派至 worker／多程序；目前 CLI 依序執行，尚未實作平行訓練。瀏覽器頁面一次只有一個世界。`reset` 不承諾還原任意中途 checkpoint，暫不提供狀態快照續訓。
+每個 Node environment 有獨立 VM，可在呼叫端分派至 worker／多程序；一般 simulate CLI 依序執行，NN 訓練 CLI 使用長駐 worker 批次併行。瀏覽器頁面一次只有一個世界。`reset` 不承諾還原任意中途 checkpoint，一般模擬沒有任意 VM 快照 API；NN 分段訓練使用已驗證的操作前綴恢復 30／50 秒盤面，詳見 NN_TRAINING.md。
 
 ## 可重現性與檔案格式
 
-`dist/control.js` 管理 seed、固定時間步長、動作、觀察與錄放。遊戲隨機數與畫面／音效隨機數分開，因此多畫幾幀不會改變戰局。AI／replay 在步與步之間統一座標及角度精度，避免不同 JS 引擎版本的微小浮點誤差經密集碰撞放大；精度規則見 GAMEPLAY.md。原本的玩家手動模式仍沿用既有輸入與更新節奏。
+`dist/control.js` 管理 seed、固定時間步長、動作、觀察與錄放。遊戲隨機數與畫面／音效隨機數分開，因此多畫幾幀不會改變戰局。AI／replay 在步與步之間統一座標及角度精度，避免不同 JS 引擎版本的微小浮點誤差經密集碰撞放大；精度規則見 GAMEPLAY.md。旗標關閉的玩家手動模式仍沿用既有輸入與更新節奏；旗標開啟時，手動操作也採固定步長錄製。
 
 Replay JSON 包含 schema、規則版本、遊戲來源 SHA-256、seed、viewport、手機倍率、開場選項、固定步長、總步數、壓縮過的動作區段與最終狀態校驗。相同動作連續出現時只存一次並累計步數，不儲存影片或逐步世界快照。
 
