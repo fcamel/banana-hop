@@ -972,7 +972,7 @@ milkTest('Slices outrun milk enemies but seek ground bottles instead of gatherin
   run("enemies=[];milkBottles=[];player.x=-1000;spawnMilkBottle({x:200,y:0});var movingBottle=spawn(0,'normal',{x:200,y:0});movingBottle.sliceGoal='bottle';movingBottle.sliceBottleId=milkBottles[0].id;updateMilkClaims(1);var chasingSlice=spawn(0,'normal',{x:40,y:0});chasingSlice.speed=110;moveMilkEnemy(chasingSlice,.1)");
   assert.ok(run('chasingSlice.x')<40);assert.equal(run('nearestMilkBottle(chasingSlice)'),null);
   run("spawnMilkBottle({x:40,y:200});chasingSlice.sliceHop=null;chasingSlice.z=0;chasingSlice.sliceGoal='bottle';chasingSlice.sliceBottleId=milkBottles[0].id;chasingSlice.sliceBottleRevision=milkBottleRevision;var seekBefore=chasingSlice.y;moveMilkEnemy(chasingSlice,.1)");assert.ok(run('chasingSlice.y')>run('seekBefore'));assert.ok(run('nearestMilkBottle(chasingSlice)'));
-  run('chasingSlice.x=movingBottle.x;chasingSlice.y=movingBottle.y;chasingSlice.sliceHop=null;chasingSlice.z=0;updateMilkClaims(.91)');assert.equal(run('movingBottle.hp'),2);assert.equal(run('chasingSlice.hp'),1);assert.equal(run('kills'),0);
+  run('chasingSlice.x=movingBottle.x;chasingSlice.y=movingBottle.y;chasingSlice.sliceHop=null;chasingSlice.z=0;updateMilkClaims(.91)');assert.equal(run('movingBottle.hp'),1);assert.equal(run('chasingSlice.hp'),1);assert.equal(run('kills'),0);
 });
 milkTest('Jet droplets travel vertically downward and damage only enemies beneath, once per pulse without charge',()=>{
   run("enemies=[];milkBottles=[];milkDrops=[];milkPack=null;player.z=108;var underJet=spawn(0,'slice',{x:0,y:8}),besideJet=spawn(0,'slice',{x:100,y:8});underJet.hp=4;emitPlayerMilkJet()");assert.equal(run('milkDrops.length'),3);assert.ok(run('milkDrops.every(d=>d.jet&&d.vz<0&&d.z>90)'));
@@ -987,23 +987,51 @@ milkTest('Touch hold and cancel drive the jet, while pause and skills stop fuel 
   run("special=null;pause();update(1)");assert.equal(run('milkPack.ammo'),run('touchFuel'));assert.equal(run('milkJetTouch'),null);
   run('pause();reset()');assert.equal(run('milkPack'),null);assert.equal(run('milkJetTouch'),null);
 });
-milkTest('A single stomp defeats a freshly formed milk enemy, while ordinary damage stays unchanged',()=>{
+milkTest('A freshly formed milk enemy has one HP and is immediately vulnerable to stomps and skills',()=>{
   run("enemies=[];milkBottles=[];spawnClock=999;player.x=500;spawnMilkBottle({x:0,y:0});var oneStompMilk=spawn(0,'slice',{x:0,y:0});oneStompMilk.sliceGoal='bottle';oneStompMilk.sliceBottleId=milkBottles[0].id;updateMilkClaims(1)");
-  assert.equal(run('oneStompMilk.type'),'milk');assert.equal(run('oneStompMilk.hp'),2);
-  run('var milkKillsBefore=kills;player.x=0;player.y=0;player.z=44;player.vz=-120;oneStompMilk.hit=0;update(.02)');
+  assert.equal(run('oneStompMilk.type'),'milk');assert.equal(run('oneStompMilk.hp'),1);assert.equal(run('oneStompMilk.hit'),0);
+  run('var milkKillsBefore=kills;player.x=0;player.y=0;player.z=44;player.vz=-120;update(.02)');
   assert.equal(run('oneStompMilk.hp'),0);assert.equal(run('kills'),run('milkKillsBefore+1'));assert.equal(run('stats.stompKills'),1);assert.equal(run('player.hp'),5);assert.ok(run('player.vz')>0);assert.equal(run('peels.length'),0);
-  run("var ordinaryMilk=spawn(0,'slice',{x:500,y:0});ordinaryMilk.type='milk';ordinaryMilk.hp=2;hitEnemy(ordinaryMilk,false)");assert.equal(run('ordinaryMilk.hp'),1);
+  run("var ordinaryMilk=spawn(0,'slice',{x:500,y:0});ordinaryMilk.type='milk';ordinaryMilk.hp=2;hitEnemy(ordinaryMilk,false)");assert.equal(run('ordinaryMilk.hp'),0);
+});
+
+milkTest('Milk enemies can be stomped at bottle height in every firing phase and never hide behind hit timers',()=>{
+  for(const mobile of [false,true])for(const phase of ['walk','aim','recover']){
+    context.milkMobile=mobile;context.milkPhaseTest=phase;
+    run("window.matchMedia=()=>({matches:milkMobile});reset();enemies=[];milkBottles=[];spawnClock=999;var milkScale=characterScale();var vulnerableMilk=spawn(0,'slice',{x:29*milkScale,y:0});vulnerableMilk.type='milk';vulnerableMilk.hp=1;vulnerableMilk.milkPhase=milkPhaseTest;vulnerableMilk.milkTime=0;vulnerableMilk.hit=.35;player.z=70*milkScale;player.vz=-100;update(.016)");
+    assert.equal(run('vulnerableMilk.hp'),0);assert.equal(run('player.hp'),5);assert.equal(run('stats.stompKills'),1);assert.ok(run('player.vz')>0);assert.ok(run('player.z')>=43);
+  }
+});
+milkTest('Ultimate defeats milk enemies in one contact in every phase, including residual hit protection',()=>{
+  for(const mobile of [false,true])for(const phase of ['walk','aim','recover']){
+    context.milkMobile=mobile;context.milkPhaseTest=phase;
+    run("window.matchMedia=()=>({matches:milkMobile});reset();enemies=[];milkBottles=[];spawnClock=999;var ultMilk=spawn(0,'slice',{x:50*characterScale(),y:0});ultMilk.type='milk';ultMilk.hp=2;ultMilk.hit=.35;ultMilk.milkPhase=milkPhaseTest;ultMilk.milkTime=0;charge=100;player.face=0;activate();update(.016)");
+    assert.equal(run('ultMilk.hp'),0);assert.equal(run('kills'),1);assert.equal(run('player.hp'),5);run('update(.016)');assert.equal(run('kills'),1);
+  }
+});
+milkTest('Milk stomp keeps the slice horizontal footprint rather than hitting nearby bottles remotely',()=>{
+  run("enemies=[];milkBottles=[];spawnClock=999;var edgeMilk=spawn(0,'slice',{x:31,y:0});edgeMilk.type='milk';edgeMilk.hp=1;edgeMilk.milkPhase='aim';edgeMilk.milkTime=0;player.z=70;player.vz=-120;update(.016)");assert.equal(run('edgeMilk.hp'),1);
+  run('edgeMilk.x=29;update(.016)');assert.equal(run('edgeMilk.hp'),0);
+});
+milkTest('Both hopping and launched slices can be stomped and hit by the ultimate',()=>{
+  for(const mobile of [false,true])for(const attack of ['stomp','ultimate']){
+    context.sliceAirMobile=mobile;context.sliceAirAttack=attack;
+    run("window.matchMedia=()=>({matches:sliceAirMobile});reset();enemies=[];milkBottles=[];spawnClock=999;var hoppingTarget=spawn(0,'slice',{x:0,y:0});hoppingTarget.sliceHop={t:.2,ax:0,ay:0,bx:0,by:0};hoppingTarget.z=40*characterScale();if(sliceAirAttack==='stomp'){player.z=70*characterScale();player.vz=-200;}else{charge=100;activate();}update(.016)");
+    assert.equal(run('hoppingTarget.hp'),0);assert.equal(run('player.hp'),5);assert.equal(run('kills'),1);
+    run("reset();enemies=[];milkBottles=[];spawnClock=999;var launchedTarget=spawn(0,'slice',{x:0,y:0});launchedTarget.sliceFlight={t:0,ax:0,ay:0,bx:200,by:0,startZ:32,duration:.5};launchedTarget.z=32");
+    run("if(sliceAirAttack==='stomp'){player.z=70*characterScale();player.vz=-200;}else{charge=100;activate();}update(.016)");assert.equal(run('launchedTarget.hp'),0);assert.equal(run('launchedTarget.sliceFlight'),null);assert.equal(run('player.hp'),5);assert.equal(run('kills'),1);
+  }
 });
 
 milkTest('Slices transform after windup and the player can steal or interrupt the bottle first',()=>{
   run("enemies=[];milkBottles=[];player.x=500;spawnMilkBottle({x:0,y:0});var drinkSlice=spawn(0,'normal',{x:0,y:0});drinkSlice.sliceGoal='bottle';drinkSlice.sliceBottleId=milkBottles[0].id;updateMilkClaims(.4)");assert.equal(run('drinkSlice.type'),'slice');
-  run('updateMilkClaims(.51)');assert.equal(run('drinkSlice.type'),'milk');assert.equal(run('drinkSlice.hp'),2);assert.equal(run('milkBottles.length'),0);
+  run('updateMilkClaims(.51)');assert.equal(run('drinkSlice.type'),'milk');assert.equal(run('drinkSlice.hp'),1);assert.equal(run('milkBottles.length'),0);
   run("enemies=[];milkBottles=[];player.x=0;spawnMilkBottle({x:0,y:0});var stolenSlice=spawn(0,'normal',{x:0,y:0});stolenSlice.drinking=.89;stolenSlice.milkTarget=milkBottles[0].id;updateMilkStage(.02,null)");assert.equal(run('stolenSlice.type'),'slice');assert.ok(run('milkPack'));
   run("milkPack=null;player.x=500;spawnMilkBottle({x:0,y:0});stolenSlice.hp=2;stolenSlice.drinking=.8;stolenSlice.milkTarget=milkBottles[0].id;hitEnemy(stolenSlice,false);updateMilkClaims(.2)");assert.equal(run('stolenSlice.drinking'),0);assert.equal(run('stolenSlice.type'),'slice');
 });
 milkTest('A ground bottle consumes exactly one slice and the milk enemy never absorbs more or heals',()=>{
   run("enemies=[];milkBottles=[];player.x=500;spawnMilkBottle({x:0,y:0});for(let i=0;i<5;i++){var atomicSlice=spawn(0,'normal',{x:0,y:0});atomicSlice.sliceGoal='bottle';atomicSlice.sliceBottleId=milkBottles[0].id;}updateMilkClaims(1)");
-  assert.equal(run("enemies.filter(e=>e.type==='milk').length"),1);assert.equal(run("enemies.find(e=>e.type==='milk').hp"),2);assert.equal(run("enemies.filter(e=>e.hp>0&&e.type==='slice').length"),4);assert.equal(run('kills'),0);assert.equal(run('peels.length'),0);
+  assert.equal(run("enemies.filter(e=>e.type==='milk').length"),1);assert.equal(run("enemies.find(e=>e.type==='milk').hp"),1);assert.equal(run("enemies.filter(e=>e.hp>0&&e.type==='slice').length"),4);assert.equal(run('kills'),0);assert.equal(run('peels.length'),0);
   run("var fixedMilk=enemies.find(e=>e.type==='milk');fixedMilk.hp=1;updateMilkClaims(2)");assert.equal(run('fixedMilk.hp'),1);assert.equal(run('fixedMilk.speed'),62);assert.equal(run("enemies.filter(e=>e.hp>0&&e.type==='slice').length"),4);
 });
 milkTest('A bottle admits one slice and nearby incoming slices cannot restack the drinker',()=>{
@@ -1120,10 +1148,21 @@ milkTest('Stack hits remove one slice without duplicating health or kill rewards
   run('enemies=[];milkBottles=[];var hitStack=spawnSliceStack(0,{x:100,y:0});hitEnemy(hitStack,true)');assert.equal(run('hitStack.hp'),2);assert.equal(run('hitStack.stackCount'),2);assert.equal(run('kills'),1);assert.equal(run('stats.stompKills'),1);assert.equal(run('milkPopulation()'),2);
   run('hitStack.hit=0;hitEnemy(hitStack,false);hitStack.hit=0;hitEnemy(hitStack,false)');assert.equal(run('hitStack.hp'),0);assert.equal(run('kills'),3);assert.equal(run('peels.length'),0);
 });
-milkTest('Flying slices hurt on contact but cannot be stomped or enter bottles until they land',()=>{
-  run("enemies=[];milkBottles=[];spawnClock=999;player.x=0;spawnMilkBottle({x:0,y:0});var airborneSlice=spawn(0,'slice',{x:0,y:0});launchSliceFlight(airborneSlice,0);airborneSlice.sliceFlight.bx=0;airborneSlice.sliceFlight.by=0;updateMilkClaims(1)");assert.equal(run('airborneSlice.type'),'slice');assert.equal(run('hitEnemy(airborneSlice,true)'),false);
+milkTest('Flying slices still hurt on contact and cannot enter bottles until they land',()=>{
+  run("enemies=[];milkBottles=[];spawnClock=999;player.x=0;spawnMilkBottle({x:0,y:0});var airborneSlice=spawn(0,'slice',{x:0,y:0});launchSliceFlight(airborneSlice,0);airborneSlice.sliceFlight.bx=0;airborneSlice.sliceFlight.by=0;updateMilkClaims(1)");assert.equal(run('airborneSlice.type'),'slice');assert.ok(run('airborneSlice.sliceFlight'));
   run('milkBottles=[];update(.02)');assert.equal(run('player.hp'),4);
   run('moveMilkEnemy(airborneSlice,airborneSlice.sliceFlight.duration)');assert.equal(run('airborneSlice.sliceFlight'),null);assert.equal(run('hitEnemy(airborneSlice,true)'),true);
+});
+milkTest('Jet spray can intercept launched slices and cancels flight even if a damaged slice survives',()=>{
+  for(const mobile of [false,true]){
+    context.jetFlightMobile=mobile;
+    run("window.matchMedia=()=>({matches:jetFlightMobile});reset();enemies=[];milkBottles=[];milkPack=null;milkDrops=[];spawnClock=999;var sprayFlight=spawn(0,'slice',{x:0,y:8});sprayFlight.hp=2;sprayFlight.z=32*characterScale();sprayFlight.sliceFlight={t:0,ax:0,ay:8,bx:200,by:8,startZ:sprayFlight.z,duration:.5};player.z=108*characterScale();emitPlayerMilkJet();updateMilkSpray(.3)");
+    assert.equal(run('sprayFlight.hp'),1);assert.equal(run('sprayFlight.sliceFlight'),null);assert.equal(run('sprayFlight.z'),0);
+    run('sprayFlight.hit=0;sprayFlight.knock=0;emitPlayerMilkJet();updateMilkSpray(.3)');assert.equal(run('sprayFlight.hp'),0);assert.equal(run('kills'),1);assert.equal(run('peels.length'),0);
+  }
+});
+milkTest('An out-of-range launched slice keeps flying without being hit remotely',()=>{
+  run("enemies=[];milkBottles=[];spawnClock=999;var missedFlight=spawn(0,'slice',{x:150,y:0});missedFlight.sliceFlight={t:0,ax:150,ay:0,bx:400,by:0,startZ:32,duration:1};missedFlight.z=32;player.z=70;player.vz=-200;update(.016)");assert.equal(run('missedFlight.hp'),1);assert.ok(run('missedFlight.sliceFlight'));assert.ok(run('missedFlight.x')>150);
 });
 milkTest('Stack shots and deep-green charger windups share charge feedback only while attacks are preparing',()=>{
   run("enemies=[];var chargedStack=spawnSliceStack(0,{x:300,y:0});chargedStack.stackTime=.5");assert.equal(run('enemyChargeProgress(chargedStack)'),.5);

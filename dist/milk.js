@@ -218,8 +218,8 @@ function updateMilkClaims(dt){
     if(e.drinking<milkRules.ingest)continue;
     // Consume atomically: a second slice cannot reuse this bottle in this frame.
     milkBottles=milkBottles.filter(b=>b!==bottle);
-    e.type='milk';e.hp=2;e.speed=62;e.drinking=0;e.milkTarget=null;
-    e.milkPhase='walk';e.milkTime=0;e.hit=.35;
+    e.type='milk';e.hp=1;e.speed=62;e.drinking=0;e.milkTarget=null;
+    e.milkPhase='walk';e.milkTime=0;e.hit=0;
     burst(e.x,e.y,'#fff1c9',16);texts.push({x:e.x,y:e.y,z:80,text:'香蕉牛奶！',life:1});sfx('bossCast');
   }
 }
@@ -256,7 +256,7 @@ function updateMilkSpray(dt){
     }
     let victim=null,nearest=Infinity;
     for(const e of enemies){
-      if(e.hp<=0||e.sliceFlight||e.hit>0||drop.waveHits?.has(e.id))continue;
+      if(e.hp<=0||(e.hit>0&&e.type!=='milk')||drop.waveHits?.has(e.id))continue;
       const s=characterScale(),radius=26*s;
       const top=(e.z||0)+34*s,bottom=(e.z||0)-4*s,dz=az-drop.z;
       if(!drop.jet||dz<=0||az<bottom||drop.z>top)continue;

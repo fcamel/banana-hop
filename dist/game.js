@@ -615,7 +615,7 @@ function updateItems(dt,pickupPath=null){
     for(const e of enemies){
       if(e.hp<=0||e.carriedBy!==undefined||e.projectile||p.hits.has(e.id))continue;
       if(segmentDistance(e,p.prevX,p.prevY,p.x,p.y)>(18+(isLargeBanana(e)?30:16)*characterScale()))continue;
-      if(e.type!=='durian'&&e.hit>0)continue;
+      if(e.type!=='durian'&&e.type!=='milk'&&e.hit>0)continue;
       const before=enemies.length;
       if(e.type!=='durian'&&!hitEnemy(e,false))continue;
       p.hits.set(e.id,elapsed);
@@ -656,10 +656,10 @@ function slip(actor,angle){actor.down=.7;actor.slipCooldown=1.05;const speed=isL
 function slide(actor,dt){const step=Math.min(dt,actor.down);const decay=Math.exp(-1.5*step),travel=(1-decay)/1.5;actor.x+=actor.slipX*travel;actor.y+=actor.slipY*travel;actor.slipX*=decay;actor.slipY*=decay;actor.down=Math.max(0,actor.down-dt);}
 function hurt(reason,source='enemy'){if(state!=='playing'||isBossWorldFrozen()||isGiantCeremony()||(source==='boss'&&isBossCinematic())||invincibleMode||player.inv>0||special)return;player.hp--;player.giantBoostUntil=0;player.padDriftX=player.padDriftY=0;player.stompLandingPending=false;player.recoil=0;player.stompGuard=0;player.downPose='hurt';player.inv=2.5;player.damageInv=2.5;if(player.down<=0){player.down=.5;player.slipX=Math.cos(player.face)*170;player.slipY=Math.sin(player.face)*170;}player.z=0;player.vz=0;combo=0;comboLife=0;shake=.22;burst(player.x,player.y,'#fff2b0');sfx('hurt');notify(reason+' −1 ♥');if(player.hp<=0)finish(false);}
 function hitEnemy(e,isStomp){
-  if(isBossWorldFrozen()||isGiantCeremony()||e.hp<=0||e.hit>0||e.type==='durian'||e.sliceFlight)return false;
+  if(isBossWorldFrozen()||isGiantCeremony()||e.hp<=0||(e.hit>0&&e.type!=='milk')||e.type==='durian')return false;
   const originalType=e.type,stompedStack=isStomp&&e.type==='slice'&&(e.stackCount||1)>1;
-  if(e.type==='slice'){e.sliceHop=null;e.z=0;}
-  e.hp-=isStomp&&e.type==='milk'?e.hp:1;if(e.type==='slice'&&(e.stackCount||1)>1){e.stackCount=e.hp;kills++;if(isStomp)stats.stompKills++;}e.hit=.24;burst(e.x,e.y,bananaColor(e),8);
+  if(e.type==='slice'){e.sliceHop=null;e.sliceFlight=null;e.z=0;}
+  e.hp-=e.type==='milk'?e.hp:1;if(e.type==='slice'&&(e.stackCount||1)>1){e.stackCount=e.hp;kills++;if(isStomp)stats.stompKills++;}e.hit=.24;burst(e.x,e.y,bananaColor(e),8);
   if(isStomp){combo=comboLife>0?combo+1:1;comboLife=1.5;stats.maxCombo=Math.max(stats.maxCombo,combo);stats.stompHits++;const gain=combo===1?20:10;const before=charge;charge=Math.min(100,charge+gain);if(Math.floor(charge/100)>Math.floor(before/100))sfx('charge');texts.push({x:e.x,y:e.y,z:60,text:`+${(gain/100).toFixed(1)} 層`,life:.7});sfx('stomp',1+Math.min(combo,10)*.08);}
   if(stompedStack)bounceFromStomp(e);
   if(!isStomp)sfx('hit');
@@ -1008,7 +1008,7 @@ if(special){
   for(const e of enemies){
     if(e.hp<=0||e.carriedBy!==undefined||(s.mode==='surf'?segmentDistance(e,dashFromX,dashFromY,player.x,player.y):dist(player,e))>((isLargeBanana(e)?96:80)*characterScale()))continue;
     if(s.hits.has(e.id))continue;
-    if(e.type!=='durian'&&e.hit>0)continue;
+    if(e.type!=='durian'&&e.type!=='milk'&&e.hit>0)continue;
     s.hits.add(e.id);
     if(e.type==='durian'){const dx=e.x-player.x,dy=e.y-player.y,l=Math.hypot(dx,dy)||1;e.kx=dx/l*400;e.ky=dy/l*400;e.knock=.5;burst(e.x,e.y,'#d8e89b');}
     else{const before=enemies.length;hitEnemy(e,false);for(let i=before;i<enemies.length;i++)s.hits.add(enemies[i].id);if(s.mode==='surf'&&e.hp>0){const a=Math.atan2(e.y-player.y,e.x-player.x);e.knock=.35;e.kx=Math.cos(a)*320;e.ky=Math.sin(a)*320;}}
@@ -1038,8 +1038,9 @@ for(const fruit of enemies){if(fruit.carriedBy===undefined)continue;const owner=
 // Resolve descending stomps using the same post-movement positions as contact damage.
 if(stompPending){
   if(state==='playing'&&player.down<=0&&player.recoil<=0&&player.vz<0){
-    const target=enemies.filter(e=>e.hp>0&&e.type!=='durian'&&!e.sliceFlight&&e.hit<=0&&player.z<=43+(e.type==='slice'?(e.z||0):0)&&dist(player,e)<((isLargeBanana(e)?46:30)*characterScale())).sort((a,b)=>dist(player,a)-dist(player,b))[0];
-    if(target&&hitEnemy(target,true)&&player.recoil<=0){player.z=43;player.vz=310;player.jumpLock=.1;}
+    const target=enemies.filter(e=>e.hp>0&&e.type!=='durian'&&(e.hit<=0||e.type==='milk')&&player.z<=(e.type==='milk'?88*characterScale():43+(e.type==='slice'?(e.z||0):0))&&dist(player,e)<((isLargeBanana(e)?46:30)*characterScale())).sort((a,b)=>dist(player,a)-dist(player,b))[0];
+    const bounceZ=target?.type==='milk'?Math.max(43,player.z):43;
+    if(target&&hitEnemy(target,true)&&player.recoil<=0){player.z=bounceZ;player.vz=310;player.jumpLock=.1;}
   }
   if(player.z<=0){player.z=0;player.vz=0;player.giantBoostUntil=0;player.padDriftX=player.padDriftY=0;if(comboLife<.9){combo=0;comboLife=0;}}
 }
