@@ -12,6 +12,7 @@
 - [GAMEPLAY.md](GAMEPLAY.md)：所有玩法規則、數值、生成公式、道具、魔王階段與動畫時序。
 - [AGENTS.md](AGENTS.md)：任何 agent 開新 session 時應遵守的工作慣例。
 - [DEPLOYMENT.md](DEPLOYMENT.md)：版號、驗證、commit／push／GitHub Pages 發布與失敗處理。
+- [CHANGELOG.md](CHANGELOG.md)：各版本的重要更新與重大 Bug 修正。
 
 預設只做 local 開發。明確要求發布時才進行對應動作；版號預設升 patch，詳見發布文件。
 
@@ -46,6 +47,7 @@ npm test
 AGENTS.md                   Agent 工作慣例
 GAMEPLAY.md                 遊戲設計與參數
 DEPLOYMENT.md               版號與發布操作
+CHANGELOG.md                重要版本更新與 Bug 修正
 .github/workflows/pages.yml 檢查、WebP 生成與 Pages 部署
 dist/                       可直接執行與部署的完整遊戲
   game.js                   主迴圈、玩家、小兵、碰撞與一般音樂

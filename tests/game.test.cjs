@@ -14,6 +14,21 @@ test('Main and debug menus use only the independent 蕉片崛起 and 蕉皮末�
   assert.doesNotMatch(html,/試作|試玩|原版|第一關|第二關/i);
 });
 test('Initial asset loading finishes before opening the main menu',()=>{assert.equal(run('assetsReady'),true);assert.equal(run('state'),'intro');assert.equal(element('start').disabled,false);assert.equal(element('loadingScreen').hidden,true);assert.ok(run('!!mutedFloor'));});
+test('Every delivered game image is used, has its PNG source, and is available to the loader',()=>{
+  const assets=__dirname+'/../dist/assets/';
+  const used=Array.from(run('gameAssets.map(asset=>asset.src.split("/").pop())'));
+  assert.equal(new Set(used).size,used.length);
+  assert.deepEqual(fs.readdirSync(assets).filter(name=>name.endsWith('.webp')).sort(),used.slice().sort());
+  assert.deepEqual(fs.readdirSync(assets+'mobile').sort(),used.slice().sort());
+  for(const name of used){assert.ok(fs.statSync(assets+'mobile/'+name).size>0);assert.ok(fs.statSync(assets+name).size>0);assert.ok(fs.statSync(assets+name.replace(/\.webp$/,'.png')).size>0);}
+});
+test('Asset URLs select one family before loading and the surf icon shares that family',()=>{
+  assert.equal(run("gameAssetUrl('assets/floor-tile-v1.webp',true)"),'assets/mobile/floor-tile-v1.webp');
+  assert.equal(run("gameAssetUrl('assets/floor-tile-v1.webp',false)"),'assets/floor-tile-v1.webp');
+  assert.equal(run('mobileAssetVariant'),false);assert.ok(run("gameAssets.every(asset=>!asset.src.includes('/mobile/'))"));
+  assert.equal(element('surfIcon').src,run('gameAssets.find(asset=>asset.image===surfItemSprite).src'));
+  const html=fs.readFileSync(__dirname+'/../dist/index.html','utf8');assert.doesNotMatch(html,/<img[^>]+src="assets\/surfboard/);
+});
 test('Both stages share the original floor palette when switching stages',()=>{
   assert.ok(run('mutedFloor'));
   run("var floorMethods={},floorDraws=[];for(const key of ['save','restore','fillRect','drawImage']){floorMethods[key]=ctx[key];ctx[key]=key==='drawImage'?(image)=>floorDraws.push(image):()=>{}};var originalMilkStage=milkStage");
@@ -21,7 +36,7 @@ test('Both stages share the original floor palette when switching stages',()=>{
   finally{run('milkStage=originalMilkStage;for(const key in floorMethods)ctx[key]=floorMethods[key]');}
 });
 test('Surf assets load and cache before play alongside the existing art',()=>{
-  assert.equal(run('gameAssets.length'),20);assert.ok(run('gameAssets.some(a=>a.image===heroSurfSprite)'));assert.ok(run('gameAssets.some(a=>a.image===surfItemSprite)'));
+  assert.equal(run('gameAssets.length'),16);assert.ok(run('gameAssets.some(a=>a.image===heroSurfSprite)'));assert.ok(run('gameAssets.some(a=>a.image===surfItemSprite)'));
   assert.equal(run('renderSprite(heroSurfSprite).height'),240);assert.equal(run('renderSprite(surfItemSprite).width'),160);
 });
 test('Surf requires inventory and rescues a fallen player without spending charge',()=>{
@@ -430,7 +445,7 @@ test('Mobile enemy collision footprints shrink with sprites',()=>{run("window.ma
 
 
 test('Sprite caches include all frames and large variants at DPR-2 resolution',()=>{
-  assert.equal(run('renderSprites.size'),19);assert.equal(run('renderSprites.get(enemySprite).size'),8);
+  assert.equal(run('renderSprites.size'),15);assert.equal(run('renderSprites.get(enemySprite).size'),8);
   assert.equal(run('renderSprite(enemySprite,0,1).height'),192);assert.equal(run('renderSprite(enemySprite,0,2).height'),384);
   assert.equal(run('renderSprite(groundSprite,2).height'),256);assert.equal(run('renderSprite(bossSprite).height'),410);
   assert.equal(run('renderSprite(heroSprite)===renderSprite(heroSprite)'),true);assert.equal(run('renderSprite(heroSlipSprite)===renderSprite(heroHurtSprite)'),false);
@@ -1352,6 +1367,28 @@ milkTest('Initial giant arrival freezes actions from time zero through assembly 
   run("enemies=[];keys.add('d');beginGiantBattle();var firstArrivalPlayer=JSON.stringify(player);charge=100;surfStock=1;keys.add('d');jump();activate();activateSurf();hurt('arrival');update(.5)");assert.equal(run('JSON.stringify(player)'),run('firstArrivalPlayer'));assert.equal(run('special'),null);assert.equal(run('isBossWorldFrozen()'),true);assert.equal(run('giantBattle.formations[0].time'),.5);
   run('update(2.7)');assert.equal(run('isGiantCeremony()'),false);assert.equal(run('isGiantNameEntrance()'),true);assert.equal(run('JSON.stringify(player)'),run('firstArrivalPlayer'));run('update(1)');assert.equal(run('isBossWorldFrozen()'),false);assert.equal(run('keys.size'),0);
   run("formGiant({x:500,y:300},false);keys.add('d');update(.1)");assert.ok(run('player.x')>0);assert.equal(run('isBossWorldFrozen()'),false);
+});
+milkTest('Opening giants leave safe player and shield spacing at every map edge on desktop and mobile',()=>{
+  try{
+    for(const [width,height,mobile] of [[1000,650,false],[844,390,true],[568,320,true],[390,844,true]])for(const x of [-1250,0,1250])for(const y of [-1250,0,1250]){
+      Object.assign(context,{safeWidth:width,safeHeight:height,safeMobile:mobile,safeX:x,safeY:y});
+      run("window.matchMedia=()=>({matches:safeMobile});reset();W=safeWidth;H=safeHeight;enemies=[];milkBottles=[];player.x=safeX;player.y=safeY;player.inv=0;beginGiantBattle()");
+      assert.equal(run('liveGiants().length'),2);
+      assert.ok(run('liveGiants().every(g=>dist(g,player)>=200*characterScale()-1e-7)'));
+      assert.ok(run('dist(...liveGiants())>=300*characterScale()-1e-7'));
+      assert.ok(run('liveGiants().every(g=>Math.abs(g.x)<=arenaSize-150*characterScale()+1e-7&&Math.abs(g.y)<=arenaSize-150*characterScale()+1e-7)'));
+      run('updateGiantEntrance(4.2)');assert.equal(run('player.x'),x);assert.equal(run('player.y'),y);assert.equal(run('player.inv'),.5);
+      // Remove the grace period to prove selection itself avoids all contact hazards.
+      run('player.inv=0;player.stompGuard=0;giantContacts()');assert.equal(run('player.hp'),5);
+      run('for(let i=0;i<40;i++)update(.02)');assert.equal(run('player.hp'),5);
+    }
+  }finally{run('delete window.matchMedia;resize()');}
+});
+milkTest('Arrival grace lasts half a second, preserves longer invincibility, and never repeats on reinforcement',()=>{
+  run('enemies=[];beginGiantBattle();updateGiantEntrance(4.2)');assert.equal(run('player.inv'),.5);assert.equal(run('player.stompGuard'),.5);assert.equal(run('playerDamageBlink()'),false);
+  run("hurt('arrival grace');update(.2)");assert.equal(run('player.hp'),5);assert.ok(Math.abs(run('player.inv')-.3)<1e-8);
+  run('player.inv=0;player.stompGuard=0;formGiant({x:500,y:300},false);updateGiantEntrance(.1)');assert.equal(run('player.inv'),0);
+  run('reset();enemies=[];player.inv=2;beginGiantBattle();updateGiantEntrance(4.2)');assert.equal(run('player.inv'),2);
 });
 milkTest('Descending arrival beams apply to both opening giants and new giants, while simple healing keeps its basic glow',()=>{
   run('enemies=[];beginGiantBattle();var beamMethods={beam:drawGiantFormationBeam,slice:drawGiantSlice,supply:drawGiantSupplyGlow,hints:drawGiantHints},arrivalBeams=0,basicGlows=0;drawGiantFormationBeam=()=>arrivalBeams++;drawGiantSlice=()=>{};drawGiantSupplyGlow=()=>basicGlows++;drawGiantHints=()=>{}');

@@ -1,6 +1,6 @@
 {
   "name": "banana-hop",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "description": "香蕉踩香蕉 — 蕉片崛起與蕉皮末日，兩個獨立的香蕉生存與魔王戰關卡",
   "scripts": {

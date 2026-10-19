@@ -13,6 +13,7 @@ The repository is `fcamel/banana-hop`; its production branch is `main`. Producti
 Use three components everywhere: `MAJOR.MINOR.PATCH`. The package version, visible menu label and release asset query keys are synchronized by `scripts/version.cjs`.
 
 - Local changes do not bump the release version.
+- Every version change must include an entry in the separate [CHANGELOG.md](CHANGELOG.md), committed with the version bump. Use a version heading and a few concise bullets covering only important updates and significant bug fixes; omit detailed tuning values, implementation history and exhaustive change lists.
 - A requested release defaults to one patch bump, even for gameplay changes. For example, `1.2.1` → `1.2.2`.
 - Explicit minor bump: `1.2.1` → `1.3.0`; explicit major bump: `1.2.1` → `2.0.0`.
 - An exact requested version or “不用動版號” takes precedence.
@@ -39,7 +40,7 @@ python3 -m venv .venv
 .venv/bin/python scripts/optimize-assets.py
 ```
 
-PNG sources remain in `dist/assets/`; the script resizes to the delivery dimensions and writes transparent, lossless-encoded WebP. HTML and the game load WebP for both desktop and mobile. Commit source PNG changes, the generator and regenerated delivery images together. Existing checked-in WebP files let a fresh checkout run locally without Pillow.
+Only currently used game artwork remains in `dist/assets/`; remove both PNG/WebP and their loader/cache/generator entries when artwork is retired. The 16 active PNG sources remain in `dist/assets/`; the script resizes to the delivery dimensions and writes transparent lossless desktop WebP in `dist/assets/` and same-resolution quality-85 mobile WebP in `dist/assets/mobile/`. Both sets are deployed. Before preloading, the browser selects one family using `matchMedia('(max-width: 650px), (pointer: coarse)')`, consistent with the touch layout; it does not parse User-Agent. The selection stays fixed until reload so rotation/resizing does not reload the full image set. The surf UI icon uses that same URL family and cache. Commit source PNG changes, the generator and regenerated delivery images together. Existing checked-in WebP files let a fresh checkout run locally without Pillow.
 
 ```sh
 npm start
@@ -54,7 +55,7 @@ Gameplay parameters belong in `GAMEPLAY.md`; setup belongs in README; agent conv
 ## Release procedure
 
 1. Inspect `git status`, current branch, remote and diff. Include the intended accumulated local work; preserve unrelated work. Confirm repository `fcamel/banana-hop` and production target `main` before publishing.
-2. Apply the requested/default version bump once. Update `GAMEPLAY.md` for changed rules, and regenerate WebP if needed.
+2. Apply the requested/default version bump once and add the matching concise entry to `CHANGELOG.md`. Update `GAMEPLAY.md` for changed rules, and regenerate WebP if needed.
 3. Run `npm run check`, `npm test`, and `git diff --check`. Inspect desktop/mobile UI when relevant; check loading, version display and browser errors.
 4. Stage explicit intended paths and commit with a title describing the version and changes. Example: `Release v1.2.2: improve boss summoning`.
 5. If authorized, `git push origin main`. Do not force push. Resolve remote divergence without discarding work; run checks again if conflict resolution changes behavior.

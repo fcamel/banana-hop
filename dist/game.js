@@ -17,14 +17,13 @@ function trackBattlePeaks(){
 }
 
 const heroSprite=new Image(),heroSlipSprite=new Image(),heroHurtSprite=new Image(),durianSprite=new Image(),enemySprite=new Image(),groundSprite=new Image(),floorTile=new Image();
-const bossSprite=new Image(),heroSurfSprite=new Image(),surfItemSprite=new Image(),sliceSprite=new Image(),milkBottleSprite=new Image(),giantBodySprite=new Image(),giantHeadSprite=new Image(),caseClosedSprite=new Image(),caseBaseSprite=new Image(),caseLidSprite=new Image(),heroCurledSprite=new Image(),heroRisingSprite=new Image(),heroStretchSprite=new Image();
+const bossSprite=new Image(),heroSurfSprite=new Image(),surfItemSprite=new Image(),sliceSprite=new Image(),milkBottleSprite=new Image(),giantBodySprite=new Image(),giantHeadSprite=new Image(),caseClosedSprite=new Image(),caseBaseSprite=new Image();
+// Choose once before loading, using the same device criteria as the touch layout.
+const mobileAssetVariant=!!window.matchMedia?.('(max-width: 650px), (pointer: coarse)').matches;
+function gameAssetUrl(src,mobile=mobileAssetVariant){return mobile?src.replace('assets/','assets/mobile/'):src;}
 const gameAssets=[
   {image:caseClosedSprite,src:'assets/banana-case-closed-v1.webp'},
   {image:caseBaseSprite,src:'assets/banana-case-base-v1.webp'},
-  {image:caseLidSprite,src:'assets/banana-case-lid-v1.webp'},
-  {image:heroCurledSprite,src:'assets/hero-curled-v1.webp'},
-  {image:heroRisingSprite,src:'assets/hero-rising-v1.webp'},
-  {image:heroStretchSprite,src:'assets/hero-stretch-v1.webp'},
   {image:giantBodySprite,src:'assets/giant-banana-body-v1.webp'},
   {image:giantHeadSprite,src:'assets/giant-banana-head-v1.webp'},
   {image:sliceSprite,src:'assets/enemy-banana-slice-v1.webp'},
@@ -39,7 +38,8 @@ const gameAssets=[
   {image:enemySprite,src:'assets/enemy-phantoms-v1.webp'},
   {image:groundSprite,src:'assets/ground-items-v1.webp'},
   {image:floorTile,src:'assets/floor-tile-v1.webp'}
-];
+].map(asset=>({...asset,src:gameAssetUrl(asset.src)}));
+$('surfIcon').src=gameAssetUrl('assets/surfboard-v1.webp');
 let assetsReady=false,loadingPromise=null,assetLoadAttempt=0,mutedFloor=null;
 function prepareFloorTile(){
   const surface=document.createElement('canvas');surface.width=floorTile.naturalWidth;surface.height=floorTile.naturalHeight;
@@ -49,7 +49,7 @@ function prepareFloorTile(){
 const renderSprites=new Map();
 function prepareRenderSprites(){
   renderSprites.clear();
-  const specs=[{image:caseClosedSprite,width:348},{image:caseBaseSprite,width:348},{image:caseLidSprite,width:348},{image:heroCurledSprite,width:244},{image:heroRisingSprite,height:156},{image:heroStretchSprite,height:224},{image:giantBodySprite,width:220},{image:giantHeadSprite,height:230},{image:sliceSprite,width:208},{image:milkBottleSprite,height:192},{image:heroSurfSprite,height:240},{image:surfItemSprite,width:160},{image:heroSprite,height:205},{image:heroSlipSprite,height:280},{image:heroHurtSprite,height:280},{image:durianSprite,width:192},{image:bossSprite,height:410},{image:enemySprite,columns:4,height:192,variants:[1,2]},{image:groundSprite,columns:3,height:256}];
+  const specs=[{image:caseClosedSprite,width:348},{image:caseBaseSprite,width:348},{image:giantBodySprite,width:220},{image:giantHeadSprite,height:230},{image:sliceSprite,width:208},{image:milkBottleSprite,height:192},{image:heroSurfSprite,height:240},{image:surfItemSprite,width:160},{image:heroSprite,height:205},{image:heroSlipSprite,height:280},{image:heroHurtSprite,height:280},{image:durianSprite,width:192},{image:bossSprite,height:410},{image:enemySprite,columns:4,height:192,variants:[1,2]},{image:groundSprite,columns:3,height:256}];
   for(const spec of specs){
     const frames=new Map(),columns=spec.columns||1,sw=spec.image.naturalWidth/columns,sh=spec.image.naturalHeight;
     for(const variant of spec.variants||[1])for(let frame=0;frame<columns;frame++){

@@ -1,6 +1,6 @@
 'use strict';
 let giantBattle=null,giantDullSprite=null;
-const giantRules={hp:3,max:3,interval:10,ceremony:3.2,hintDuration:5,orbitRadius:102,orbitSpeed:.55,padHeight:28,padRadius:36,wallHeight:125,wallRadius:11,padDriftFactor:.35,padDriftMax:240,boost:520,boostWindow:2.5,headStep:34,headExtra:14,headRadius:46,headDepth:51,headBackOffset:12,bodyRadius:53,speed:30,ejectDuration:.85,attackIdle:6,attackCharge:2,attackOut:2,attackReturn:1,attackRecover:1,attackRadius:330,chargeSpin:7,flightSpin:4};
+const giantRules={hp:3,max:3,interval:10,entranceSafety:200,entranceSeparation:300,entranceInv:.5,ceremony:3.2,hintDuration:5,orbitRadius:102,orbitSpeed:.55,padHeight:28,padRadius:36,wallHeight:125,wallRadius:11,padDriftFactor:.35,padDriftMax:240,boost:520,boostWindow:2.5,headStep:34,headExtra:14,headRadius:46,headDepth:51,headBackOffset:12,bodyRadius:53,speed:30,ejectDuration:.85,attackIdle:6,attackCharge:2,attackOut:2,attackReturn:1,attackRecover:1,attackRadius:330,chargeSpin:7,flightSpin:4};
 function resetGiants(){giantBattle=null;}
 function isGiantCeremony(){return !!giantBattle?.formations.some(f=>f.initial);}
 function liveGiants(){return giantBattle?giantBattle.giants.filter(g=>g.hp>0):[];}
@@ -16,14 +16,40 @@ function beginGiantBattle(){
     for(let i=0;i<(e.type==='slice'?(e.stackCount||1):1);i++)giantBattle.fallen.push({x:e.x+(i-1)*9,y:e.y+i*6,angle:(e.wobble||0)+i,age:0});
   }
   clearBoxInput();sliceRallies=[];enemies=[];milkBottles=[];milkDrops=[];peels=[];player.giantBoostUntil=0;
-  const offset=Math.min(290,W*.28);
-  for(const side of [-1,1])formGiant({x:clamp(player.x+side*offset,-arenaSize+160,arenaSize-160),y:player.y},true);
+  for(const site of initialGiantSites())formGiant(site,true);
   noticeLife=0;$('notice').textContent='';syncMusic();updateHUD();
 }
 function giantSiteBounds(){
   const s=characterScale();
   // Keep the assembled head and the full idle shield orbit inside the camera.
   return {left:Math.max(-arenaSize+150*s,player.x-W/2+150*s),right:Math.min(arenaSize-150*s,player.x+W/2-150*s),top:Math.max(-arenaSize+150*s,player.y+(170*s-H*.52)/.72),bottom:Math.min(arenaSize-150*s,player.y+(H*.48-100*s)/.72)};
+}
+function initialGiantSites(){
+  const s=characterScale(),offset=Math.min(290,W*.28),preferred=[{x:player.x-offset,y:player.y},{x:player.x+offset,y:player.y}];
+  const world={left:-arenaSize+150*s,right:arenaSize-150*s,top:-arenaSize+150*s,bottom:arenaSize-150*s};
+  const safe=p=>dist(p,player)>=giantRules.entranceSafety*s;
+  const separated=(a,b)=>dist(a,b)>=giantRules.entranceSeparation*s;
+  const choose=b=>{
+    if(b.left>b.right||b.top>b.bottom)return null;
+    const inside=p=>p.x>=b.left&&p.x<=b.right&&p.y>=b.top&&p.y<=b.bottom;
+    if(preferred.every(p=>inside(p)&&safe(p))&&separated(...preferred))return preferred;
+    const candidates=preferred.filter(p=>inside(p)&&safe(p));
+    for(let x=0;x<=10;x++)for(let y=0;y<=10;y++){
+      const p={x:b.left+(b.right-b.left)*x/10,y:b.top+(b.bottom-b.top)*y/10};
+      if(safe(p))candidates.push(p);
+    }
+    let pair=null,best=Infinity;
+    for(let i=0;i<candidates.length;i++)for(let j=i+1;j<candidates.length;j++){
+      const a=candidates[i],b=candidates[j];if(!separated(a,b))continue;
+      const forward=dist(a,preferred[0])+dist(b,preferred[1]),reverse=dist(b,preferred[0])+dist(a,preferred[1]),score=Math.min(forward,reverse);
+      if(score<best){best=score;pair=forward<=reverse?[a,b]:[b,a];}
+    }
+    return pair;
+  };
+  // Prefer the full head/orbit on screen. At tight corners, retain safe spacing
+  // before visual margins; never clamp a giant back into the player's space.
+  const visible={left:Math.max(world.left,player.x-W/2),right:Math.min(world.right,player.x+W/2),top:Math.max(world.top,player.y-H*.52/.72),bottom:Math.min(world.bottom,player.y+H*.48/.72)};
+  return choose(giantSiteBounds())||choose(visible)||choose(world);
 }
 function giantSite(){
   const {left,right,top,bottom}=giantSiteBounds(),giants=liveGiants();
@@ -252,7 +278,7 @@ function updateGiantEntrance(dt){
   if(assemblyStep>0)updateGiantBattle(assemblyStep);
   const titleStep=dt-assemblyStep;
   if(titleStep>0)giantBattle.clock=Math.min(giantRules.ceremony+bossNameDuration,giantBattle.clock+titleStep);
-  if(!isGiantEntrance()){clearBoxInput();special=null;player.z=0;player.vz=0;player.down=0;player.recoil=0;}
+  if(!isGiantEntrance()){clearBoxInput();special=null;player.z=0;player.vz=0;player.down=0;player.recoil=0;player.inv=Math.max(player.inv,giantRules.entranceInv);player.stompGuard=player.inv;}
   updateHUD();
 }
 function giantHintActive(){return !!giantBattle&&!isGiantCeremony()&&!isGiantNameEntrance()&&giantBattle.clock<giantBattle.hintUntil;}

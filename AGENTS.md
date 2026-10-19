@@ -11,6 +11,7 @@
 - Implement and verify locally. **Do not commit, push, deploy or bump the release version unless the user explicitly requests those actions.** A request to change gameplay is not release authorization.
 - Perform only the requested release steps. A commit-only request does not authorize push/deploy. Pushing `main` automatically deploys through GitHub Actions; disclose this consequence if the user requests push while explicitly prohibiting deployment.
 - When a release is requested, bump **patch** once per release batch by default (`1.2.1` → `1.2.2`). Honor an explicitly requested minor/major/exact version or “不要改版號”. Do not bump separately for commit, push and deploy in the same request.
+- Whenever the release version changes, update the separate [`CHANGELOG.md`](CHANGELOG.md) in the same commit. Record only that version’s important updates and significant bug fixes in a few concise bullets; omit exhaustive change lists, tuning details, and implementation history.
 - Once the user authorizes commit/push/deploy, finish the requested steps without asking for redundant confirmation. Never claim deployment succeeded based solely on a successful push.
 - “先討論” means discuss first; do not implement an undecided design. For an implementation request, continue through implementation and appropriate checks. Prefer reasonable routine choices over repeated clarification.
 
