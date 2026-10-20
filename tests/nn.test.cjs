@@ -9,9 +9,9 @@ const {execute}=require('../sim/training-worker.cjs');
 const {checkpoint,restore,trainingSetup}=require('../scripts/train-nn.cjs');
 function test(name,fn){fn();console.log('PASS',name);}
 test('Training and held-out evaluation use desktop only with four unique evaluation seeds',()=>{const setup=trainingSetup();assert.ok(setup.rollout*decisionFrames/60>=60,'A fresh rollout must have enough steps to reach the full survival horizon');assert.equal(setup.evaluationSeeds.length,4);assert.equal(new Set(setup.evaluationSeeds).size,4);assert.deepEqual(setup.profiles,[{width:1000,height:650,mobile:false}]);assert.ok(setup.evaluationSeeds.every(s=>s>=0xe0000000));});
-function scene(){return {time:0,viewport:{width:1000,height:650,scale:1},player:{x:0,y:0,z:0,vz:0,hp:5,inv:0,damageInv:0,down:0,recoil:0,jumpLock:0,recoilX:0,recoilY:0,padDriftX:0,padDriftY:0,charge:0,milkFuel:0,surfStock:0},enemies:[],milkBottles:[],milkDrops:[],spawnWarnings:[],pickups:[]};}
+function scene(){return {time:0,viewport:{width:1000,height:650,scale:1},player:{x:0,y:0,z:0,vz:0,hp:5,inv:0,damageInv:0,down:0,recoil:0,jumpLock:0,recoilX:0,recoilY:0,padDriftX:0,padDriftY:0,charge:0,milkFuel:0,surfStock:0},enemies:[],milkBottles:[],milkDrops:[],spawnWarnings:[],pickups:[],surfPickups:[]};}
 test('NN observation packs independent object types, states, velocities and past input without leaking future random choices',()=>{
-  const o=scene(),base=encode(o);assert.equal(base.length,3232);assert.equal(base.length,featureCount);
+  const o=scene(),base=encode(o);assert.equal(base.length,3296);assert.equal(base.length,featureCount);
   o.enemies=Array.from({length:50},(_,id)=>({id,type:'slice',x:10+id,y:0,stackCount:3,stackAnchor:true,stackTime:.5,sliceFlight:{ax:0,ay:0,bx:200,by:30,duration:.5}}));
   const crowded=encode(o);o.milkBottles.push({x:300,y:20,claimantId:1});assert.notDeepEqual(encode(o),crowded);
   const bottle=encode(o);o.enemies.push({type:'milk',x:40,y:30,milkPhase:'aim',milkTime:.5,milkAim:1});assert.notDeepEqual(encode(o),bottle);
@@ -22,14 +22,14 @@ test('NN observation packs independent object types, states, velocities and past
 test('Every object class retains its nearest k with deterministic ordering, overflow exclusion and zero padding',()=>{
   for(const [name,count,width] of groups){
     const o=scene(),items=Array.from({length:count+8},(_,i)=>({id:i+1,x:i+1,y:0,type:name==='milk'?'milk':'slice',hostile:true})).reverse();
-    if(name==='slices'||name==='milk')o.enemies=items;else o[{bottles:'milkBottles',drops:'milkDrops',warnings:'spawnWarnings',pickups:'pickups'}[name]]=items;
+    if(name==='slices'||name==='milk')o.enemies=items;else o[{bottles:'milkBottles',drops:'milkDrops',warnings:'spawnWarnings',pickups:'pickups',surfPickups:'surfPickups'}[name]]=items;
     const offset=32+groups.slice(0,groups.findIndex(g=>g[0]===name)).reduce((sum,[,n,w])=>sum+n*w,0),features=encode(o);
     for(let i=0;i<count;i++){assert.equal(features[offset+i*width],1);assert.equal(features[offset+i*width+1],(i+1)/1250);}
     items.reverse();assert.deepEqual(encode(o),features,'input array order must not choose which objects are visible');
     items.splice(1);const padded=encode(o);assert.equal(padded[offset],1);assert.ok(Array.from(padded.slice(offset+width,offset+count*width)).every(n=>n===0));
   }
   const o=scene();o.enemies=[{id:2,x:3,y:4,type:'slice'},{id:1,x:-3,y:-4,type:'slice'}];assert.equal(encode(o)[33],-3/1250);
-  assert.equal(contract,'milk-skills-v3');assert.ok(groups.find(g=>g[0]==='slices')[1]>=50);assert.ok(groups.find(g=>g[0]==='milk')[1]>=50);
+  assert.equal(contract,'milk-skills-v4');assert.ok(groups.find(g=>g[0]==='slices')[1]>=50);assert.ok(groups.find(g=>g[0]==='milk')[1]>=50);
 });
 test('Viewport filtering includes altitude and camera movement, and occurs before nearest-k selection for every object class',()=>{
   const o=scene(),p=o.player,w=o.viewport.width,h=o.viewport.height;
@@ -38,7 +38,7 @@ test('Viewport filtering includes altitude and camera movement, and occurs befor
   assert.equal(inViewport(o,{x:0,y:(h-h*.52)/.72+.01}),false);
   assert.equal(inViewport(o,{x:0,y:0,z:h}),false);assert.equal(inViewport(o,{x:0,y:1000,z:600}),true);
   for(const [name,count,width] of groups){
-    const s=scene(),field={bottles:'milkBottles',drops:'milkDrops',warnings:'spawnWarnings',pickups:'pickups'}[name],type=name==='milk'?'milk':'slice';
+    const s=scene(),field={bottles:'milkBottles',drops:'milkDrops',warnings:'spawnWarnings',pickups:'pickups',surfPickups:'surfPickups'}[name],type=name==='milk'?'milk':'slice';
     const visible={id:999,x:300,y:0,type,hostile:true},hidden=Array.from({length:count+3},(_,id)=>({id,x:1,y:0,z:10000,type,hostile:true}));
     if(name==='slices'||name==='milk')s.enemies=[visible];else s[field]=[visible];
     const expected=encode(s);if(name==='slices'||name==='milk')s.enemies.push(...hidden);else s[field].push(...hidden);
@@ -136,12 +136,12 @@ test('Changing only critic predictions cannot change rollout returns or action t
 test('Skill masks expose only visible encoded targets and available resources, with canonical unused parameters',()=>{
   const o=scene();o.enemies=[{id:3,type:'slice',x:501,y:0},{id:2,type:'slice',x:80,y:0},{id:1,type:'slice',x:40,y:0},{id:4,type:'milk',x:90,y:0}];o.milkBottles=[{x:150,y:0}];o.pickups=[{id:5,x:120,y:0}];
   const slots=targetSlots(o),features=encode(o),context=skillContext(o);
-  assert.equal(slots.length,157);assert.equal(slots[1].object.id,1);assert.equal(slots[2].object.id,2);assert.equal(slots[3],null);assert.equal(slots[65].object.id,4);assert.equal(slots[129].kind,'bottle');assert.equal(slots[141].kind,'pickup');
+  assert.equal(slots.length,173);assert.equal(slots[1].object.id,1);assert.equal(slots[2].object.id,2);assert.equal(slots[3],null);assert.equal(slots[65].object.id,4);assert.equal(slots[129].kind,'bottle');assert.equal(slots[141].kind,'pickup');
   assert.equal(slots[1].object.x/1250,features[33]);assert.equal(slots[65].object.x/1250,features[32+64*18+1]);
-  assert.deepEqual(context.skills,[true,true,true,true,false,false,false]);assert.equal(context.parameters[2].target[129],false);assert.equal(context.parameters[1].target[129],true);
+  assert.deepEqual(context.skills,[true,true,true,true,false,false,false,true,true,false]);assert.equal(context.parameters[2].target[129],false);assert.equal(context.parameters[1].target[129],false);
   assert.throws(()=>validateChoice([2,0,129],context),/Unavailable/);assert.throws(()=>validateChoice([0,0,1],context),/Unavailable/);
-  o.player.charge=100;o.player.surfStock=1;o.player.milkFuel=1;assert.deepEqual(skillContext(o).skills,[true,true,false,false,true,true,true]);
-  o.player.down=.5;assert.deepEqual(skillContext(o).skills,[true,false,false,false,true,true,false]);
+  o.player.charge=100;o.player.surfStock=1;o.player.milkFuel=1;assert.deepEqual(skillContext(o).skills,[true,true,false,false,true,true,true,true,true,false]);
+  o.player.down=.5;assert.deepEqual(skillContext(o).skills,[true,false,false,false,true,true,false,false,false,false]);
 });
 test('Options keep target identity, stop at visibility loss, leave jump timing and risk to the policy and trigger aimed skills once',()=>{
   const o=scene();o.enemies=[{id:1,type:'slice',x:50,y:0},{id:2,type:'slice',x:100,y:0}];
@@ -274,4 +274,65 @@ test('Snapshot graph codec retains shared native Sets, Maps and nonfinite values
   const vm=require('node:vm'),sandbox=vm.createContext({});new vm.Script(require('../sim/snapshot.cjs').script).runInContext(sandbox);
   const saved=new vm.Script('(()=>{const hits=new Set([7]),a={hits,other:hits,limit:Infinity,missing:undefined};a.self=a;a.map=new Map([[a,hits]]);return trainingSnapshotCodec.encode(a)})()').runInContext(sandbox);
   sandbox.input=JSON.stringify(saved);assert.equal(new vm.Script('(()=>{const a=trainingSnapshotCodec.decode(JSON.parse(input));return a===a.self&&a.hits===a.other&&a.map.get(a)===a.hits&&a.hits instanceof Set&&a.map instanceof Map&&a.hits.has(7)&&a.limit===Infinity&&a.missing===undefined})()').runInContext(sandbox),true);
+});
+
+// Controlled training-only fixtures isolate the executor; all movement,
+// collection, airborne restrictions and resource changes use real game physics.
+function itemFixture(change=()=>{}){
+  const host=createEnvironment({mode:'milk',seed:7,entrance:false,survivalOnly:true}),snapshot=host.snapshot(),vm=require('node:vm'),codec=vm.createContext({});
+  new vm.Script(require('../sim/snapshot.cjs').script).runInContext(codec);codec.json=JSON.stringify(snapshot.world);
+  const world=vm.runInContext('trainingSnapshotCodec.decode(JSON.parse(json))',codec);
+  Object.assign(world,{elapsed:30,enemies:[],spawnWarnings:[],spawnClock:999,spawnDueWaves:0,nextMilkAt:999,nextPickupAt:999,nextSurfAt:999,milkBottles:[{id:900,x:120,y:0,age:0}],pickups:[{id:901,x:0,y:130,age:0}],surfPickups:[{id:902,x:-140,y:0,age:0}],serial:1000});
+  change(world);codec.world=world;snapshot.world=JSON.parse(JSON.stringify(vm.runInContext('trainingSnapshotCodec.encode(world)',codec)));snapshot.time=world.elapsed;
+  return {startAt:world.elapsed,sourceDigest:snapshot.sourceDigest,previous:[0,0,0,0],snapshot,tail:[]};
+}
+test('Every collectible has an independent skill, target mask and NN-controlled walking/jumping parameter',()=>{
+  const o=scene();o.milkBottles=[{id:1,x:80,y:0}];o.pickups=[{id:2,x:0,y:90}];o.surfPickups=[{id:3,x:-100,y:0}];
+  const c=skillContext(o);assert.deepEqual(heads,[10,9,173,2]);assert.equal(c.skills[1],false);assert.equal(c.skills[2],false);
+  for(const [skill,target]of [[7,129],[8,141],[9,157]]){
+    assert.equal(c.skills[skill],true);assert.deepEqual(c.parameters[skill].travel,[true,true]);
+    assert.equal(c.parameters[skill].target.filter(Boolean).length,1);validateChoice([skill,0,target,0],c);validateChoice([skill,0,target,1],c);
+    assert.throws(()=>validateChoice([skill,0,target===129?141:129,0],c),/Unavailable/);assert.throws(()=>validateChoice([skill,1,target,0],c),/Unavailable/);
+  }
+  o.player.surfStock=3;assert.equal(skillContext(o).skills[9],false);
+  o.player.milkFuel=5;assert.deepEqual(skillContext(o).parameters[7].travel,[true,false]);assert.throws(()=>createOption([7,0,129,1],o),/Unavailable/);
+  o.player.down=.2;assert.deepEqual(skillContext(o).skills.slice(7),[false,false,false]);
+  o.player.down=0;o.milkBottles[0].x=501;o.pickups[0].collected=true;o.surfPickups[0].x=-501;assert.deepEqual(skillContext(o).skills.slice(7),[false,false,false]);
+});
+test('Item options retain identity, jump at most once, wait naturally above a target and stop on disappearance or damage',()=>{
+  const o=scene();o.milkBottles=[{id:10,x:100,y:0},{id:11,x:-150,y:0}];const option=createOption([7,0,129,1],o);
+  assert.equal(optionControl(option,o).action.jump,true);o.player.z=90;o.player.vz=-40;o.player.x=95;o.milkBottles[1].x=96;
+  const c=optionControl(option,o);assert.equal(c.action.jump,false);assert.equal(c.action.x,0);assert.equal(c.action.y,0);assert.equal(o.player.z,90);assert.equal(o.player.vz,-40);
+  o.milkBottles=o.milkBottles.filter(b=>b.id!==10);assert.equal(optionControl(option,o).reason,'target-lost');
+  const other=createOption([7,0,129,0],o);o.player.hp--;assert.equal(optionControl(other,o).reason,'interrupted');
+});
+test('Each collection skill acquires the correct real item; jumping lands before collection and rewards remain survival only',()=>{
+  for(const [skill,target,key,check]of [[7,129,'milkBottles',o=>o.player.milkFuel>0],[8,141,'bunches',o=>o.player.inv>0],[9,157,'surfBoards',o=>o.player.surfStock===1]]){
+    for(const travel of [0,1]){
+      // Sliding boards are collected by the original peel-stage update path.
+      const env=skillEnvironment({startSnapshots:[itemFixture(w=>{if(skill===9)w.milkStage=false;})]}),r=env.step([skill,0,target,travel]);
+      assert.equal(env.metrics()[key],1);assert.ok(check(env.observe()));assert.equal(env.observe().player.z,0);assert.equal(r.option.travel,travel?'jump':'walk');
+      assert.ok(Math.abs(r.reward-r.option.frames/60)<1e-8);if(travel)assert.ok(r.option.frames>40,'A normal jump must finish before a ground pickup');
+      assert.equal(Object.entries(env.metrics()).filter(([k,v])=>k!=='milkJetSeconds'&&v>0).length,1);
+    }
+  }
+});
+test('Collecting from the air does not force landing; timeout allows another action before an item is acquired',()=>{
+  const env=skillEnvironment({startSnapshots:[itemFixture(w=>{w.player.z=90;w.player.vz=-20;w.milkBottles[0].x=0;})]});
+  const r=env.step([7,0,129,0]);assert.ok(r.option.frames>20);assert.equal(env.observe().player.z,0);assert.equal(env.metrics().milkBottles,1);
+  const far=skillEnvironment({startSnapshots:[itemFixture(w=>{w.milkBottles[0].x=490;w.pickups=[];w.surfPickups=[];})]}),first=far.step([7,0,129,0]);
+  assert.equal(first.option.reason,'timeout');assert.equal(first.option.frames,90);assert.equal(far.metrics().milkBottles,0);const x=far.observe().player.x;far.step([0,5,0,0]);assert.ok(far.observe().player.x<x);
+});
+test('Actual pickup metrics count full refills, fuel consumption and reset boundaries without rewarding them',()=>{
+  const entry=itemFixture(w=>{w.milkPack={ammo:5,emit:0,spraying:false};w.milkBottles[0].x=0;});const env=skillEnvironment({startSnapshots:[entry]});
+  assert.deepEqual(env.metrics(),{milkBottles:0,bunches:0,surfBoards:0,milkJetSeconds:0});env.step([7,0,129,0]);assert.equal(env.observe().player.milkFuel,5);assert.equal(env.metrics().milkBottles,1);
+  const r=env.step([6,0,0,0]);assert.ok(Math.abs(env.metrics().milkJetSeconds-.3)<1e-8);assert.ok(Math.abs(r.reward-.3)<1e-8);
+  env.reset();assert.deepEqual(env.metrics(),{milkBottles:0,bunches:0,surfBoards:0,milkJetSeconds:0});
+});
+test('PPO learns the walking/jumping parameter with the same conditional masks and finite gradients',()=>{
+  const o=scene();o.milkBottles=[{id:1,x:100,y:0}];const context=skillContext(o),net=new Network(3,4,new Random(2)),rng=new Random(3),f=Float64Array.of(.2,.4,-.1),layer=net.layers.at(-1);
+  net.parameters[layer.b+7]=20;const s=net.sample(f,rng,false,context);assert.equal(s.action[0],7);assert.equal(s.action.length,4);validateChoice(s.action,context);
+  const item={...s,features:f,advantage:1,target:3},result=lossAndGradient(net,[item]);
+  const at=layer.b+heads.slice(0,3).reduce((a,b)=>a+b,0),old=net.parameters[at],eps=1e-5;net.parameters[at]=old+eps;const plus=lossAndGradient(net,[item]).loss;net.parameters[at]=old-eps;const minus=lossAndGradient(net,[item]).loss;net.parameters[at]=old;
+  assert.ok(Math.abs((plus-minus)/(2*eps)-result.gradient[at])<1e-6);
 });

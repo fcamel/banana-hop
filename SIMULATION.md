@@ -69,3 +69,5 @@ Replay JSON 包含 schema、規則版本、遊戲來源 SHA-256、seed、viewpor
 Replay 只支援與錄製時**完全相同的遊戲程式來源**；改過遊戲後不能保證舊檔仍能播放，工具會拒絕不符的來源版本。需要長期保留時，請連同對應 Git commit 保存。載入會檢查格式、數值與步數，執行結束再核對狀態及遊戲 RNG；不會靜默忽略不同步。
 
 Node 模擬可重用已編譯腳本與同 profile 的 VM；以不同 seed 重設仍建立新的遊戲環境。`restoreTape` 按 Replay 相同輸入區段批次呼叫原物理迴圈（每批最多 600 步），物理步長、逐步 RNG 與碰撞不變，尾端由原重播驗證器校驗；只把最後兩幀交給 NN 可見速度估計。一般 Replay 播放介面與檔案格式不變。
+
+Node `createEnvironment().metrics()` 提供實際牛奶瓶、香蕉串、滑板取得數及牛奶噴射秒數；重開／快照還原後重新計數，Replay 重演則累積該段實際事件。計數不改 observation、reward、物理或 Replay；訓練暖機前綴的計數另行排除，詳見 [NN_TRAINING.md](NN_TRAINING.md)。

@@ -30,7 +30,7 @@ function renderTable(){
   const compatible=state.runs.find(r=>r.id===state.run)?.source_digest===state.source;
   for(const row of all.slice(state.page*pageSize,(state.page+1)*pageSize)){
     const tr=node('tr');for(const text of [row.generation,seconds(row.mean),seconds(row.minimum)+' / '+seconds(row.maximum),Math.round(row.success_rate*100)+'%',row.samples])tr.append(node('td',text));
-    const reason=node('td'),label=row.reason==='baseline'?'第一代':row.reason==='breakthrough'?'顯著突破':'分數紀錄';reason.append(node('span',label,'badge '+(row.reason==='baseline'?'baseline':'')));tr.append(reason);
+    const reason=node('td'),label=row.reason==='baseline'?'第一代':row.reason==='breakthrough'?'新高紀錄':'分數紀錄';reason.append(node('span',label,'badge '+(row.reason==='baseline'?'baseline':'')));tr.append(reason);
     const action=node('td');if(row.replay){const button=node('button','播放');button.disabled=!compatible;button.setAttribute('aria-label','播放第 '+row.generation+' 代');if(!compatible)button.title='遊戲程式版本不同，請切回錄製時版本';button.addEventListener('click',()=>play(row));const link=node('a','下載');link.href='/training/api/replays/'+encodeURIComponent(row.replay);link.download=row.replay;action.append(button,link);}else action.append(node('span',row.reason==='score-only'?'—':'已輪替移除','removed'));tr.append(action);$('rows').append(tr);
   }
   if(!all.length){const tr=node('tr'),td=node('td','沒有符合的紀錄');td.colSpan=7;tr.append(td);$('rows').append(tr);}
@@ -42,7 +42,7 @@ function render(data){
   $('storage-fill').style.width=Math.min(100,data.usage.bytes/data.usage.maxBytes*100)+'%';
   if(!run)return;const latest=state.rows[state.rows.length-1];$('generations').textContent=run.generations;$('best').textContent=seconds(run.best);$('latest').textContent=latest?seconds(latest.mean):'—';$('success').textContent=latest?Math.round(latest.success_rate*100)+'%':'—';
   $('run-info').textContent=run.name+' · '+run.trainer+' · 每代 '+run.sample_count+' 場'+(run.source_digest!==state.source?' · 舊版遊戲紀錄，請下載並切回對應程式播放':'');
-  $('threshold').textContent='超過上次保留的最佳平均至少 '+run.absolute+' 秒或 '+Math.round(run.relative*100)+'%（取較大者）才保留 Replay。';renderChart();renderTable();
+  $('threshold').textContent='平均存活創歷史新高即保留 Replay；等分與退步不保存。';renderChart();renderTable();
 }
 async function load(runId=state.run,reset=false){
   state.controller?.abort();const controller=new AbortController();state.controller=controller;$('refresh').disabled=true;

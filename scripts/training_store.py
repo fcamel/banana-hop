@@ -138,12 +138,13 @@ class TrainingStore:
             else:
                 if generation != 1:
                     raise ValueError('A new run must start at generation 1')
-                absolute = number(record.get('breakthroughSeconds', 1), 'breakthroughSeconds')
-                relative = number(record.get('breakthroughRatio', .05), 'breakthroughRatio', 0, 1)
+                absolute = number(record.get('breakthroughSeconds', 0), 'breakthroughSeconds')
+                relative = number(record.get('breakthroughRatio', 0), 'breakthroughRatio', 0, 1)
                 best = None
-            history = db.execute('SELECT MAX(mean) best,COUNT(replay) retained FROM generations WHERE run_id=?', (run_id,)).fetchone()
+            # Keep legacy threshold columns/inputs compatible; every historical new high is now retained.
+            history = db.execute('SELECT MAX(mean) best FROM generations WHERE run_id=?', (run_id,)).fetchone()
             new_high = history['best'] is None or mean > history['best'] + 1e-9
-            significant = best is None or new_high and (history['retained'] < 10 or mean + 1e-9 >= best + max(absolute, abs(best) * relative))
+            significant = best is None or new_high
             reason = 'baseline' if best is None else 'breakthrough' if significant else 'score-only'
             filename, content, replay_score = None, None, None
             if significant:

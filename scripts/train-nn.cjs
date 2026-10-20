@@ -4,7 +4,7 @@ const {sourceDigest}=require('../sim/environment.cjs'),{contract,featureCount}=r
 const {startTimes,stageShares,weightRollouts,createStartBank,validateBank,rolloutJobs,materialize,breakthroughStarts}=require('../sim/curriculum.cjs');
 const {skills,heads}=require('../sim/skills.cjs');
 const root=path.resolve(__dirname,'..');
-const implementationDigest=require('node:crypto').createHash('sha256').update(['sim/environment.cjs','sim/snapshot.cjs','sim/curriculum.cjs','sim/skills.cjs','sim/motion.cjs','sim/telegraph.cjs','sim/training.cjs','sim/ppo.cjs','sim/training-worker.cjs','scripts/train-nn.cjs'].map(name=>name+'\n'+fs.readFileSync(path.join(root,name),'utf8')).join('\n')).digest('hex');
+const implementationDigest=require('node:crypto').createHash('sha256').update(['sim/environment.cjs','sim/item-metrics.cjs','sim/snapshot.cjs','sim/curriculum.cjs','sim/skills.cjs','sim/motion.cjs','sim/telegraph.cjs','sim/training.cjs','sim/ppo.cjs','sim/training-worker.cjs','scripts/train-nn.cjs'].map(name=>name+'\n'+fs.readFileSync(path.join(root,name),'utf8')).join('\n')).digest('hex');
 class Pool{
   constructor(count){this.queue=[];this.slots=Array.from({length:count},()=>{const slot={worker:new Worker(path.join(root,'sim/training-worker.cjs')),job:null};slot.worker.on('message',m=>{const job=slot.job;slot.job=null;if(m.error)job.reject(Error(m.error));else job.resolve(m.result);this.pump();});slot.worker.on('error',e=>{if(slot.job){slot.job.reject(e);slot.job=null;}this.failed=e;for(const job of this.queue)job.reject(e);this.queue=[];});return slot;});}
   run(job){if(this.failed)return Promise.reject(this.failed);return new Promise((resolve,reject)=>{this.queue.push({data:job,resolve,reject});this.pump();});}
@@ -75,7 +75,7 @@ async function main(argv){
         // uses deterministic generation/job seeds. No per-step process startup.
         const jobs=rolloutJobs({config,random,parameters:net.parameters,banks});
         const results=await Promise.all(jobs.map(j=>pool.run(j)));rolloutMs=performance.now()-generationStart;const updateStart=performance.now();trainedSteps+=results.reduce((s,r)=>s+r.physicsSteps,0);
-        training={starts:Object.fromEntries(results.map(r=>[r.startAt,{decisions:r.buffer.length,completedEpisodes:r.episodes,minimumDecisions:jobs.find(j=>j.startAt===r.startAt).decisions,lossShare:stageShares[startTimes.indexOf(r.startAt)],physicsSteps:r.physicsSteps,skillCounts:r.skillCounts}])),timeBuckets:{0:0,30:0,50:0}};for(const r of results)for(const t of startTimes)training.timeBuckets[t]+=r.timeBuckets[t];
+        training={starts:Object.fromEntries(results.map(r=>[r.startAt,{decisions:r.buffer.length,completedEpisodes:r.episodes,minimumDecisions:jobs.find(j=>j.startAt===r.startAt).decisions,lossShare:stageShares[startTimes.indexOf(r.startAt)],physicsSteps:r.physicsSteps,skillCounts:r.skillCounts,itemMetrics:r.itemMetrics}])),timeBuckets:{0:0,30:0,50:0}};for(const r of results)for(const t of startTimes)training.timeBuckets[t]+=r.timeBuckets[t];
         stats=optimize(net,adam,weightRollouts(results),random,{epochs:config.epochs,batchSize:config.batchSize,learningRate:config.learningRate});updateMs=performance.now()-updateStart;
       }
       const evaluationStart=performance.now();
@@ -91,10 +91,10 @@ async function main(argv){
       const recordFile=path.join(folder,'pending-generation.json'),replayFile=path.join(folder,'pending-replay.json');
       atomic(recordFile,record);atomic(replayFile,best.replay);
       const result=JSON.parse(execFileSync('python3',[path.join(root,'scripts/record-generation.py'),recordFile,'--replay',replayFile,'--directory',directory],{encoding:'utf8'}));
-      const saved=checkpoint(net,adam,config,generation,runId,random,stats);saved.training=training;saved.evaluation={seeds:evaluationSeeds,scores,profiles};atomic(path.join(folder,'latest.json'),saved);if(result.reason==='baseline')atomic(path.join(folder,'initial.json'),saved);if(result.reason!=='score-only')atomic(path.join(folder,'best.json'),saved);
+      const saved=checkpoint(net,adam,config,generation,runId,random,stats);saved.training=training;saved.evaluation={seeds:evaluationSeeds,scores,profiles,itemMetrics:results.map(r=>r.itemMetrics)};atomic(path.join(folder,'latest.json'),saved);if(result.reason==='baseline')atomic(path.join(folder,'initial.json'),saved);if(result.reason!=='score-only')atomic(path.join(folder,'best.json'),saved);
       fs.unlinkSync(recordFile);fs.unlinkSync(replayFile);
       const mean=scores.reduce((a,b)=>a+b)/scores.length,toSeconds=ms=>Math.round(ms)/1000;
-      console.log(JSON.stringify({runId,generation,mean,min:Math.min(...scores),success:scores.filter(n=>n>=60-1e-6).length/scores.length,desktop:mean,archive:result.reason,probeMean,training,optimizer:stats,timingSeconds:{rollout:toSeconds(rolloutMs),update:toSeconds(updateMs),evaluation:toSeconds(evaluationMs),save:toSeconds(performance.now()-saveStart),total:toSeconds(performance.now()-generationStart)},physicsStepsPerSecond:Math.round(trainedSteps/((Date.now()-started)/1000))}));
+      console.log(JSON.stringify({runId,generation,mean,min:Math.min(...scores),success:scores.filter(n=>n>=60-1e-6).length/scores.length,desktop:mean,archive:result.reason,probeMean,evaluationItemMetrics:results.map(r=>r.itemMetrics),training,optimizer:stats,timingSeconds:{rollout:toSeconds(rolloutMs),update:toSeconds(updateMs),evaluation:toSeconds(evaluationMs),save:toSeconds(performance.now()-saveStart),total:toSeconds(performance.now()-generationStart)},physicsStepsPerSecond:Math.round(trainedSteps/((Date.now()-started)/1000))}));
       if(stopping)break;
     }
     console.log(`Checkpoint: ${path.join(folder,'latest.json')}\nDashboard: http://127.0.0.1:8893/training/`);

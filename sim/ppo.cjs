@@ -44,7 +44,7 @@ class Network{
     const draw=p=>{if(greedy)return p.indexOf(Math.max(...p));let r=rng.next();for(let i=0;i<p.length;i++){r-=p[i];if(r<0)return i;}return p.findLastIndex(v=>v>0);};
     const raw=this.forward(input),logits=raw.activations.at(-1);
     const first=distribution(logits.slice(0,heads[0]),context?.skills),skill=draw(first);
-    const masks=context?[context.skills,context.parameters[skill].direction,context.parameters[skill].target]:null;
+    const masks=context?[context.skills,context.parameters[skill].direction,context.parameters[skill].target,context.parameters[skill].travel]:null;
     let offset=heads[0];const probs=[first];for(let h=1;h<heads.length;h++){probs.push(distribution(logits.slice(offset,offset+heads[h]),masks?.[h]));offset+=heads[h];}
     const action=[skill,...probs.slice(1).map(draw)];return {action,value:raw.value,logp:logProbability(probs,action),probs,masks};
   }
