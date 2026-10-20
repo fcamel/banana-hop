@@ -56,9 +56,9 @@ while (env.summary().outcome === 'running' && env.summary().steps < 10800) {
 - `summary()`：步數、時間、血量、擊殺、勝負與累計 reward。
 - `replay()`：僅 `record: true` 可用；一般訓練不建立動作歷史。
 
-Reward 是可替換的基準訊號，不是遊戲分數或既定最優目標。現行定義請見 [GAMEPLAY.md](GAMEPLAY.md)。先維持結構化介面，之後可加 Python／模型推論的連線層；NN 專用契約、PPO 與批次 worker 已在 `sim/training.cjs`、`sim/ppo.cjs` 和 `sim/training-worker.cjs` 實作。`survivalOnly:true` 僅允許 milk，60 秒直接結束，reward 替換為有效存活秒數，step 回傳 `truncated:false`；呼叫端提早截斷仍須另外標記並 bootstrap。
+Reward 是可替換的基準訊號，不是遊戲分數或既定最優目標。現行定義請見 [GAMEPLAY.md](GAMEPLAY.md)。先維持結構化介面，之後可加 Python／模型推論的連線層；NN 使用帶參數技能控制器 `sim/skills.cjs`；專用契約、PPO 與批次 worker 已在 `sim/training.cjs`、`sim/ppo.cjs` 和 `sim/training-worker.cjs` 實作。`survivalOnly:true` 僅允許 milk，60 秒直接結束，reward 替換為有效存活秒數，step 回傳 `truncated:false`；一般呼叫端若提早停止須區分截斷與真正終止；目前 NN 訓練器會完成當前 episode，使用實際 Monte Carlo 回報，不 bootstrap。
 
-每個 Node environment 有獨立 VM，可在呼叫端分派至 worker／多程序；一般 simulate CLI 依序執行，NN 訓練 CLI 使用長駐 worker 批次併行。瀏覽器頁面一次只有一個世界。`reset` 不承諾還原任意中途 checkpoint，一般模擬沒有任意 VM 快照 API；NN 分段訓練使用已驗證的操作前綴恢復 30／50 秒盤面，詳見 NN_TRAINING.md。
+每個 Node environment 有獨立 VM，可在呼叫端分派至 worker／多程序；一般 simulate CLI 依序執行，NN 訓練 CLI 使用長駐 worker 批次併行。瀏覽器頁面一次只有一個世界。一般 `reset` 重建遊戲；NN 訓練另有 Node 專用世界快照，直接恢復中局與突破盤面。原 Replay 匯入先驗證，快照保留完整物理狀態、RNG 及共享引用，突破起點僅補 HP；不提供瀏覽器任意狀態載入。詳見 NN_TRAINING.md。
 
 ## 可重現性與檔案格式
 
@@ -67,3 +67,5 @@ Reward 是可替換的基準訊號，不是遊戲分數或既定最優目標。�
 Replay JSON 包含 schema、規則版本、遊戲來源 SHA-256、seed、viewport、手機倍率、開場選項、固定步長、總步數、壓縮過的動作區段與最終狀態校驗。相同動作連續出現時只存一次並累計步數，不儲存影片或逐步世界快照。
 
 Replay 只支援與錄製時**完全相同的遊戲程式來源**；改過遊戲後不能保證舊檔仍能播放，工具會拒絕不符的來源版本。需要長期保留時，請連同對應 Git commit 保存。載入會檢查格式、數值與步數，執行結束再核對狀態及遊戲 RNG；不會靜默忽略不同步。
+
+Node 模擬可重用已編譯腳本與同 profile 的 VM；以不同 seed 重設仍建立新的遊戲環境。`restoreTape` 按 Replay 相同輸入區段批次呼叫原物理迴圈（每批最多 600 步），物理步長、逐步 RNG 與碰撞不變，尾端由原重播驗證器校驗；只把最後兩幀交給 NN 可見速度估計。一般 Replay 播放介面與檔案格式不變。

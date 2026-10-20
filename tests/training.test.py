@@ -45,18 +45,44 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(TrainingStore().max_files, 100)
         self.assertEqual(TrainingStore().max_bytes, 100000000)
 
-    def test_baseline_and_significant_improvements(self):
-        first = self.save(1, 10)
-        self.assertEqual(first['reason'], 'baseline')
-        self.assertEqual(self.store.record_generation(record(2, 10.5))['reason'], 'score-only')
-        self.assertEqual(self.save(3, 11)['reason'], 'breakthrough')
-        self.assertEqual(self.store.snapshot()['runs'][0]['generations'], 3)
+    def test_first_ten_replays_save_every_new_high_including_small_gains(self):
+        self.store.max_files = 100
+        self.assertEqual(self.save(1, 10)['reason'], 'baseline')
+        for generation in range(2, 11):
+            self.assertEqual(self.save(generation, 10 + (generation - 1) * .01)['reason'], 'breakthrough')
+        self.assertEqual(self.store.usage()['files'], 10)
+        self.assertEqual(self.store.record_generation(record(11, 10.1))['reason'], 'score-only')
+        self.assertEqual(self.save(12, 11.09)['reason'], 'breakthrough')
 
-    def test_relative_threshold_uses_last_retained_best(self):
-        self.save(1, 40)
-        self.assertEqual(self.save(2, 41)['reason'], 'score-only')
-        self.assertEqual(self.save(3, 42)['reason'], 'breakthrough')
-        self.assertEqual(self.save(4, 43)['reason'], 'score-only')
+    def test_relative_threshold_after_ten_uses_last_retained_best(self):
+        self.store.max_files = 100
+        for generation in range(1, 11):
+            self.save(generation, 40 + (generation - 1) * .1)
+        self.assertEqual(self.store.record_generation(record(11, 41))['reason'], 'score-only')
+        self.assertEqual(self.save(12, 43)['reason'], 'breakthrough')
+        self.assertEqual(self.store.record_generation(record(13, 44))['reason'], 'score-only')
+
+    def test_new_high_is_per_run_and_compares_all_historical_scores_after_rotation(self):
+        self.store.max_files = 12
+        for generation in range(1, 11):
+            self.save(generation, 40 + (generation - 1) * .1)
+        self.store.record_generation(record(11, 41))
+        # Global rotation leaves this run below ten retained replays, but its
+        # unsaved historical high must still prevent recording a lower score.
+        for generation in range(1, 4):
+            self.save(generation, generation, run='other')
+        self.assertEqual(self.store.record_generation(record(12, 40.95))['reason'], 'score-only')
+        self.assertEqual(self.store.record_generation(record(13, 41))['reason'], 'score-only')
+        self.assertEqual(self.save(14, 41.01)['reason'], 'breakthrough')
+
+    def test_ties_and_regressions_never_create_early_replays(self):
+        self.save(1, 10)
+        self.assertEqual(self.store.record_generation(record(2, 10))['reason'], 'score-only')
+        self.assertEqual(self.store.record_generation(record(3, 9))['reason'], 'score-only')
+        with self.assertRaises(ValueError):
+            self.store.record_generation(record(4, 10.01))
+        self.assertEqual(len(self.store.snapshot()['generations']), 3)
+        self.assertEqual(self.save(4, 10.01)['reason'], 'breakthrough')
 
     def test_every_new_record_option_and_no_ties(self):
         self.save(1, 10, breakthroughSeconds=0, breakthroughRatio=0)

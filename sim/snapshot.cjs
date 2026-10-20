@@ -1,0 +1,10 @@
+'use strict';
+// Node-only world checkpoints. Preserve graph identity and native Sets/Maps;
+// JSON cloning would break shared milk-jet hit sets and special attack state.
+const names=('state elapsed spawnClock charge kills combo comboLife noticeLife shake endElapsed nextDurianAt durianWarnings nextChargerAt nextThrowerAt enemies peels particles texts special player stick serial pickups orbitPeels nextPickupAt nextBunchSide stats spawnHeading spawnMotion spawnWarnings spawnDueWaves spawnReleaseClock peelGridQuerySerial surfStock surfPickups nextSurfAt greenSurfKills surfFlights milkStage milkBottles milkDrops milkPack nextMilkAt milkBottleRevision sliceRallies boxSequence giantBattle boss bossElapsed bossShots bossClones simulationRandomState').split(' ');
+function install(){
+  function encode(root){const nodes=[],seen=new Map();function pack(v){if(v===undefined)return {undefined:true};if(typeof v==='number'&&!Number.isFinite(v))return {number:String(v)};if(!v||typeof v!=='object')return v;if(seen.has(v))return {ref:seen.get(v)};const id=nodes.length;seen.set(v,id);nodes.push(null);nodes[id]=v instanceof Set?{kind:'set',values:[...v].map(pack)}:v instanceof Map?{kind:'map',values:[...v].map(([k,x])=>[pack(k),pack(x)])}:Array.isArray(v)?{kind:'array',values:v.map(pack)}:{kind:'object',values:Object.entries(v).map(([k,x])=>[k,pack(x)])};return {ref:id};}const value=pack(root);return {nodes,value};}
+  function decode(data){const objects=data.nodes.map(n=>n.kind==='set'?new Set():n.kind==='map'?new Map():n.kind==='array'?[]:{});function unpack(v){return v&&typeof v==='object'?'ref'in v?objects[v.ref]:'number'in v?Number(v.number):undefined:v;}data.nodes.forEach((n,i)=>{const o=objects[i];if(n.kind==='set')for(const v of n.values)o.add(unpack(v));else if(n.kind==='map')for(const [k,v]of n.values)o.set(unpack(k),unpack(v));else if(n.kind==='array')for(const v of n.values)o.push(unpack(v));else for(const[k,v]of n.values)o[k]=unpack(v);});return unpack(data.value);}
+  return {encode,decode};
+}
+module.exports={names,script:`globalThis.trainingSnapshotCodec=(${install.toString()})();`};

@@ -1,17 +1,21 @@
 'use strict';
 const {parentPort}=require('node:worker_threads');
-const {trainingEnvironment,featureCount}=require('./training.cjs');
-const {Network,Random,advantages}=require('./ppo.cjs');
+const {skillEnvironment,featureCount}=require('./training.cjs');
+const {Network,Random,monteCarloReturns}=require('./ppo.cjs');
 const {createEnvironment}=require('./environment.cjs');
 function execute(job){
   if(job.kind!=='rollout'&&(job.startAt||job.startSnapshots))throw Error('Evaluation and baselines must start at 0s');
   if(job.kind==='rollout'&&(![0,30,50].includes(job.startAt??0)||!!job.startAt!==!!job.startSnapshots))throw Error('Invalid rollout curriculum start');
-  if(job.kind==='rollout'&&job.startAt&&(!Array.isArray(job.startSnapshots)||job.startSnapshots.some(s=>s.startAt!==job.startAt)))throw Error('Rollout snapshots must match their assigned stage');
+  if(job.kind==='rollout'&&job.startAt&&(!Array.isArray(job.startSnapshots)||job.startSnapshots.some(s=>s.startAt!==job.startAt&&!(job.startAt===50&&s.kind==='breakthrough'))))throw Error('Rollout snapshots must match their assigned stage');
+  if(job.kind!=='baseline'&&(!Number.isInteger(job.decisions)||job.decisions<1))throw Error('Invalid decision budget');
   const rng=new Random(job.policySeed),options={seed:job.seed,...job.profile,record:job.kind==='evaluate',startSnapshots:job.kind==='rollout'?job.startSnapshots:undefined};
   if(job.kind==='baseline'){
     if(job.policy!=='rule'){
-      const env=trainingEnvironment(options);
-      while(env.summary().outcome==='running')env.step(job.policy==='idle'?[0,0,0,0]:[Math.floor(rng.next()*9),Math.floor(rng.next()*2),Math.floor(rng.next()*2),Math.floor(rng.next()*2)]);
+      const env=skillEnvironment(options);
+      while(env.summary().outcome==='running'){
+        const pick=mask=>{const valid=mask.flatMap((v,i)=>v?[i]:[]);return valid[Math.floor(rng.next()*valid.length)];},context=env.context(),skill=job.policy==='idle'?0:pick(context.skills);
+        env.step(job.policy==='idle'?[0,0,0]:[skill,pick(context.parameters[skill].direction),pick(context.parameters[skill].target)]);
+      }
       return {score:env.summary().gameSeconds,profile:job.profile};
     }
     const env=createEnvironment({...options,mode:'milk',entrance:false,survivalOnly:true});
@@ -19,17 +23,16 @@ function execute(job){
     return {score:env.summary().gameSeconds,profile:job.profile};
   }
   const net=new Network(featureCount,job.hidden);net.parameters.set(job.parameters);
-  const env=trainingEnvironment(options),buffer=[];let trajectory=[],features=env.features(),episodes=0,physicsSteps=0;const timeBuckets={0:0,30:0,50:0};
-  for(let i=0;i<job.decisions;i++){
+  const env=skillEnvironment(options),buffer=[];let trajectory=[],features=env.features(),episodes=0,physicsSteps=0;const skillCounts={};const timeBuckets={0:0,30:0,50:0};
+  for(let i=0;i<job.decisions||(job.kind==='rollout'&&trajectory.length);i++){
     const time=env.observe().time;timeBuckets[time<30-1e-8?0:time<50-1e-8?30:50]++;
-    const sampled=net.sample(features,rng),before=env.summary().steps,result=env.step(sampled.action);physicsSteps+=result.info.steps-before;
+    const sampled=net.sample(features,rng,false,env.context()),before=env.summary().steps,result=env.step(sampled.action);physicsSteps+=result.info.steps-before;skillCounts[result.option.skill]=(skillCounts[result.option.skill]||0)+1;
     if(job.kind==='evaluate'&&result.terminated)return {score:result.info.gameSeconds,replay:env.replay(),profile:job.profile};
-    trajectory.push({...sampled,features,reward:result.reward,terminated:result.terminated});features=result.features;
-    if(result.terminated){buffer.push(...advantages(trajectory,0));trajectory=[];episodes++;features=env.reset((job.seed+episodes)>>>0);}
+    trajectory.push({...sampled,features,option:result.option,reward:result.reward,terminated:result.terminated});features=result.features;
+    if(result.terminated){buffer.push(...monteCarloReturns(trajectory));trajectory=[];episodes++;if(buffer.length<job.decisions)features=env.reset((job.seed+episodes)>>>0);}
   }
   if(job.kind==='evaluate')throw Error('Evaluation ended before the 60-second task terminated');
-  buffer.push(...advantages(trajectory,net.forward(features).value));
-  return {buffer,physicsSteps,episodes,startAt:job.startAt??0,timeBuckets};
+  return {buffer,physicsSteps,episodes,startAt:job.startAt??0,timeBuckets,skillCounts};
 }
 if(parentPort)parentPort.on('message',job=>{try{parentPort.postMessage({id:job.id,result:execute(job)});}catch(error){parentPort.postMessage({id:job.id,error:error.stack});}});
 module.exports={execute};

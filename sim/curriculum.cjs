@@ -2,13 +2,37 @@
 const {createEnvironment,sourceDigest}=require('./environment.cjs');
 const {decisionFrames,actionFor}=require('./training.cjs');
 const startTimes=Object.freeze([0,30,50]),bankSchema=1;
+const stageShares=Object.freeze([.35,.35,.30]);
+function decisionBudgets(rollout){
+  const total=rollout*startTimes.length,raw=stageShares.map(s=>s*total),budgets=raw.map(Math.floor);
+  const order=raw.map((n,i)=>({i,f:n-budgets[i]})).sort((a,b)=>b.f-a.f||a.i-b.i);
+  const remainder=total-budgets.reduce((a,b)=>a+b);
+  for(let n=0;n<remainder;n++)budgets[order[n].i]++;
+  return budgets;
+}
+// Each stage keeps its intended loss mass despite variable complete-episode tails.
+function weightRollouts(results){
+  const total=results.reduce((s,r)=>s+r.buffer.length,0);
+  for(const [i,startAt] of startTimes.entries()){
+    const result=results.find(r=>r.startAt===startAt);if(!result?.buffer.length)throw Error('Missing curriculum rollout');
+    for(const sample of result.buffer)sample.weight=stageShares[i]*total/result.buffer.length;
+  }
+  return results.flatMap(r=>r.buffer);
+}
 function previousChoice(a){
   const magnitude=Math.hypot(a.x||0,a.y||0),angle=Math.atan2(a.y||0,a.x||0);
   const direction=magnitude<.1?0:1+((Math.round(angle/(Math.PI/4))+8)%8);
   return [direction,+(!!a.jump||!!a.jet),+!!a.dash,+!!a.surf];
 }
 function validateStart(entry,profile){
-  if(!entry||![30,50].includes(entry.startAt)||entry.sourceDigest!==sourceDigest)throw Error('Invalid curriculum start/source');
+  if(!entry||(!(entry.kind==='breakthrough'&&entry.startAt>0&&entry.startAt<60)&&![30,50].includes(entry.startAt))||entry.sourceDigest!==sourceDigest)throw Error('Invalid curriculum start/source');
+  if(entry.snapshot){
+    const c=entry.snapshot.config;
+    if(entry.snapshot.sourceDigest!==sourceDigest||c.mode!=='milk'||!c.survivalOnly||c.entrance!==false||Math.abs(entry.snapshot.time-entry.startAt)>1e-7)throw Error('Invalid curriculum snapshot');
+    if(c.width!==profile.width||c.height!==profile.height||c.mobile!==profile.mobile)throw Error('Curriculum viewport changed');
+    if(entry.kind==='breakthrough'&&entry.heal!==true)throw Error('Breakthrough requires healing');
+    actionFor(entry.previous);return entry;
+  }
   const tape=entry.tape,c=tape?.config;
   if(!c||c.mode!=='milk'||c.survivalOnly!==true||c.entrance!==false||c.seed>=0x40000000)throw Error('Curriculum starts must use training seeds and survival-only milk');
   if(c.width!==profile.width||c.height!==profile.height||c.mobile!==profile.mobile)throw Error('Curriculum viewport changed');
@@ -34,15 +58,38 @@ function validateBank(bank,profile){
   if(bank?.schema!==bankSchema||bank.sourceDigest!==sourceDigest||JSON.stringify(bank.profile)!==JSON.stringify(profile))throw Error('Incompatible curriculum bank');
   for(const t of startTimes.slice(1)){
     if(!Array.isArray(bank.starts?.[t])||!bank.starts[t].length||bank.starts[t].length>64)throw Error('Missing curriculum stage');
-    for(const entry of bank.starts[t]){validateStart(entry,profile);if(entry.startAt!==t)throw Error('Wrong curriculum stage');}
+    for(const entry of bank.starts[t]){validateStart(entry,profile);if(entry.startAt!==t&&!(t===50&&entry.kind==='breakthrough'))throw Error('Wrong curriculum stage');}
   }
   return bank;
 }
 function rolloutJobs({config,random,parameters,banks}){
+  const budgets=decisionBudgets(config.rollout);
   return startTimes.map((startAt,i)=>{
     const profile=config.profiles[i%config.profiles.length],bank=banks.find(b=>JSON.stringify(b.profile)===JSON.stringify(profile));
     if(startAt&&!bank)throw Error('Missing curriculum bank for rollout profile');
-    return {kind:'rollout',startAt,startSnapshots:startAt?validateBank(bank,profile).starts[startAt]:undefined,seed:Math.floor(random.next()*0x3ffff000),policySeed:Math.floor(random.next()*0xffffffff),profile,decisions:config.rollout,hidden:config.hidden,parameters};
+    return {kind:'rollout',startAt,startSnapshots:startAt?validateBank(bank,profile).starts[startAt]:undefined,seed:Math.floor(random.next()*0x3ffff000),policySeed:Math.floor(random.next()*0xffffffff),profile,decisions:budgets[i],hidden:config.hidden,parameters};
   });
 }
-module.exports={startTimes,createStartBank,validateStart,validateBank,rolloutJobs};
+function materialize(entry){
+  if(entry.snapshot)return entry;
+  const env=createEnvironment(entry.tape.config),tail=[];
+  env.restoreTape(entry.tape,o=>tail.push(o));
+  const {tape,...rest}=entry;return {...rest,snapshot:env.snapshot(),tail};
+}
+// The stored stage key 50 denotes the late curriculum category. Breakthrough
+// entries carry their actual replay time, which need not be 50 seconds.
+function breakthroughStarts(tape){
+  if(tape.sourceDigest!==sourceDigest||tape.config.mode!=='milk'||!tape.config.survivalOnly||tape.result.gameSeconds<4)throw Error('Breakthrough replay must contain at least four real seconds');
+  createEnvironment().restoreTape(tape); // Verify the complete recorded outcome before using its prefix.
+  const targets=[3,2.5,2].map(back=>Math.floor((tape.result.gameSeconds-back)*60+1e-6));
+  const env=createEnvironment({...tape.config,record:false}),entries=[],tail=[];let frames=0,previous=[0,0,0,0];
+  for(const segment of tape.actions){const [x,y,jump,jet,dash,surf]=segment.action,action={x,y,jump:!!jump,jet:!!jet,dash:!!dash,surf:!!surf};
+    for(let i=0;i<segment.frames&&frames<targets.at(-1);i++){
+      const r=env.step(action);frames++;previous=previousChoice(action);tail.push(r.observation);if(tail.length>2)tail.shift();
+      if(targets.includes(frames))entries.push({kind:'breakthrough',startAt:r.observation.time,sourceDigest,previous:[...previous],heal:true,snapshot:env.snapshot(),tail:[...tail]});
+    }
+    if(frames>=targets.at(-1))break;
+  }
+  if(entries.length!==3)throw Error('Could not extract live breakthrough starts');return entries;
+}
+module.exports={materialize,breakthroughStarts,startTimes,stageShares,decisionBudgets,weightRollouts,createStartBank,validateStart,validateBank,rolloutJobs};

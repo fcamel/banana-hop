@@ -141,12 +141,14 @@ class TrainingStore:
                 absolute = number(record.get('breakthroughSeconds', 1), 'breakthroughSeconds')
                 relative = number(record.get('breakthroughRatio', .05), 'breakthroughRatio', 0, 1)
                 best = None
-            significant = best is None or mean > best + 1e-9 and mean + 1e-9 >= best + max(absolute, abs(best) * relative)
+            history = db.execute('SELECT MAX(mean) best,COUNT(replay) retained FROM generations WHERE run_id=?', (run_id,)).fetchone()
+            new_high = history['best'] is None or mean > history['best'] + 1e-9
+            significant = best is None or new_high and (history['retained'] < 10 or mean + 1e-9 >= best + max(absolute, abs(best) * relative))
             reason = 'baseline' if best is None else 'breakthrough' if significant else 'score-only'
             filename, content, replay_score = None, None, None
             if significant:
                 if replay is None:
-                    raise ValueError('Replay is required for generation 1 and significant breakthroughs')
+                    raise ValueError('Replay is required for generation 1 and retained new records')
                 validate_tape(replay, digest)
                 if replay['config']['seed'] not in seeds:
                     raise ValueError('Replay seed is not in this evaluation set')

@@ -27,7 +27,7 @@ npm run training:baseline -- --run-id rule-test --seed 7 --seconds 15
 - 分數歷史保存在 `.training/metrics.sqlite3`，不隨 Replay 輪替刪除。
 - Replay 位於 `.training/replays/`；**所有訓練合計最多 100 個檔案、總計 100,000,000 bytes（100 MB）**，兩個限制獨立執行，不假設每檔固定 1 MB。
 - 每次訓練的第 1 代固定保留。單次訓練通常是第 1 代加最近 99 個突破；多次訓練共用配額。
-- 突破預設以「本代平均存活」比「上次保留 Replay 的最佳平均」增加至少 `max(1 秒, 前次平均 × 5%)` 判斷。等分不保留。
+- 每批（runId）目前保留的 Replay 少於 10 個時，平均存活只要超過該批歷史最高就保存，包含初代在內計數；等分與退步不保存。滿 10 個後，創新高且比上次保存的平均增加至少 `max(1 秒, 前次平均 × 5%)` 才保存。歷史最高包含未保存／已輪替的代數，不會把較低分當新高；配額仍由所有批次共用。新規則只影響後續寫入，未保留的舊 Replay 無法由分數還原。
 - 其餘 Replay 依寫入先後移除最舊的突破，直到符合檔數與 bytes 上限；統計仍可看見，表格標示「已輪替移除」。不會為了新檔刪除任何初代基準。
 - 若所有固定基準加新檔已超過配額，拒絕此次寫入並顯示錯誤，既有基準保留。若已累積 100 個不同訓練的固定初代，需先整理舊訓練資料或另設資料目錄，才能再加入新基準。
 - `.training/` 已加入 gitignore；不 commit、push 或上傳訓練資料。可在 server 與記錄程序設定相同的 `BANANA_TRAINING_DIR=/absolute/path` 更換資料目錄。
@@ -69,9 +69,9 @@ result = TrainingStore().record_generation(generation_record, representative_rep
 
 或 POST `http://127.0.0.1:8893/training/api/generations`，Content-Type 為 `application/json`；JSON 為上述 generation 內容加上 `"replay": {完整 Replay 物件}`。成功回傳 201 與 `reason`（`baseline`／`breakthrough`／`score-only`）、保留檔名與用量；格式或配額錯誤回傳 400 並說明原因。
 
-第 1 代必須從 1 開始，後續代數必須連續。第一次建立訓練時可調整突破門檻；若希望每次創新高都保留，將兩個門檻均設為 0。其後門檻保持固定。
+第 1 代必須從 1 開始，後續代數必須連續。第一次建立訓練時可調整突破門檻；若希望滿 10 個之後仍每次創新高都保留，將兩個門檻均設為 0。其後門檻保持固定。
 
-非突破代數可省略 Replay，只記分數；第 1 代及突破代數若未提供 Replay 會拒絕寫入，不會悄悄丟失應保留的場次。訓練器可以暫存代表場次的操作，確定需要保留時才傳送／寫入。此處的觀看 Replay 與 PPO 訓練所需的 rollout buffer 是不同資料。
+未達保存條件的代數可省略 Replay，只記分數；第 1 代及符合保存條件的新高若未提供 Replay 會拒絕寫入，不會悄悄丟失應保留的場次。訓練器可以暫存代表場次的操作，確定需要保留時才傳送／寫入。此處的觀看 Replay 與 PPO 訓練所需的 rollout buffer 是不同資料。
 
 相同 runId 不允許變更遊戲來源、評估 seeds 或 `config`；需另開 runId，避免無法比較的分數混成一條曲線。檔案寫入時檢查 Replay 來源版本、格式、seed 及單局分數；播放時再實際重演並驗證最終狀態。舊版本 Replay 保留下載，但儀表板停用直接播放，需切回對應 commit。
 
