@@ -24,16 +24,16 @@ function execute(job){
     return {score:env.summary().gameSeconds,profile:job.profile};
   }
   const net=new Network(featureCount,job.hidden);net.parameters.set(job.parameters);
-  const env=skillEnvironment(options),buffer=[],totals=itemMetrics.empty();let trajectory=[],features=env.features(),episodes=0,physicsSteps=0;const skillCounts={};const timeBuckets={0:0,30:0,50:0};
+  const env=skillEnvironment(options),buffer=[],totals=itemMetrics.empty(),damage=itemMetrics.damageSummary([]);let trajectory=[],features=env.features(),episodes=0,physicsSteps=0;const skillCounts={};const timeBuckets={0:0,30:0,50:0};
   for(let i=0;i<job.decisions||(job.kind==='rollout'&&trajectory.length);i++){
     const time=env.observe().time;timeBuckets[time<30-1e-8?0:time<50-1e-8?30:50]++;
     const sampled=net.sample(features,rng,false,env.context()),before=env.summary().steps,result=env.step(sampled.action);physicsSteps+=result.info.steps-before;skillCounts[result.option.skill]=(skillCounts[result.option.skill]||0)+1;
-    if(job.kind==='evaluate'&&result.terminated)return {score:result.info.gameSeconds,replay:env.replay(),itemMetrics:env.metrics(),profile:job.profile};
+    if(job.kind==='evaluate'&&result.terminated)return {score:result.info.gameSeconds,replay:env.replay(),itemMetrics:env.metrics(),damage:{summary:itemMetrics.damageSummary(env.damageEvents()),events:env.damageEvents()},profile:job.profile};
     trajectory.push({...sampled,features,option:result.option,reward:result.reward,terminated:result.terminated});features=result.features;
-    if(result.terminated){itemMetrics.add(totals,env.metrics());buffer.push(...monteCarloReturns(trajectory));trajectory=[];episodes++;if(buffer.length<job.decisions)features=env.reset((job.seed+episodes)>>>0);}
+    if(result.terminated){itemMetrics.mergeDamage(damage,itemMetrics.damageSummary(env.damageEvents()));itemMetrics.add(totals,env.metrics());buffer.push(...monteCarloReturns(trajectory));trajectory=[];episodes++;if(buffer.length<job.decisions)features=env.reset((job.seed+episodes)>>>0);}
   }
   if(job.kind==='evaluate')throw Error('Evaluation ended before the 60-second task terminated');
-  return {buffer,physicsSteps,episodes,itemMetrics:totals,startAt:job.startAt??0,timeBuckets,skillCounts};
+  return {buffer,physicsSteps,episodes,damage,itemMetrics:totals,startAt:job.startAt??0,timeBuckets,skillCounts};
 }
 if(parentPort)parentPort.on('message',job=>{try{parentPort.postMessage({id:job.id,result:execute(job)});}catch(error){parentPort.postMessage({id:job.id,error:error.stack});}});
 module.exports={execute};

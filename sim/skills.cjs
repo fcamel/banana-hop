@@ -2,14 +2,14 @@
 // Parameterized options. Controllers see only the same visible target slots as NN.
 const directions=[[0,0],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
 const itemSkills=Object.freeze([
-  {name:'collect_milk',seconds:1.5,itemKind:'bottle'},
-  {name:'collect_bunch',seconds:1.5,itemKind:'pickup'},
-  {name:'collect_surf',seconds:1.5,itemKind:'surfPickup'}
+  {name:'collect_milk',seconds:1,itemKind:'bottle'},
+  {name:'collect_bunch',seconds:1,itemKind:'pickup'},
+  {name:'collect_surf',seconds:1,itemKind:'surfPickup'}
 ].map(Object.freeze));
 const skills=Object.freeze([
   {name:'move',seconds:.3}, {name:'approach',seconds:.6},
-  {name:'stomp',seconds:1.2}, {name:'evade',seconds:.8},
-  {name:'ultimate',seconds:1.3}, {name:'surf',seconds:2.5}, {name:'jet',seconds:.3},...itemSkills
+  {name:'stomp',seconds:1}, {name:'evade',seconds:.8},
+  {name:'ultimate',seconds:1}, {name:'surf',seconds:1}, {name:'jet',seconds:.3},...itemSkills
 ]);
 const targetGroups=[['slice',64],['milk',64],['bottle',12],['pickup',16],['surfPickup',16]];
 const targetCount=1+targetGroups.reduce((n,[,count])=>n+count,0);

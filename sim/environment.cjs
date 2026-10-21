@@ -15,12 +15,12 @@ function createEnvironment(options={}){
   vm.createContext(context);for(const script of compiled)script.runInContext(context);
   new vm.Script(snapshot.script).runInContext(context);
   new vm.Script(itemMetrics.script).runInContext(context);
-  const resetMetrics=()=>{context.trainingItemMetrics=itemMetrics.empty();};
+  const resetMetrics=()=>{context.trainingItemMetrics=itemMetrics.empty();context.trainingDamageEvents=[];context.trainingActionHistory=[];};
   const captureScript=new vm.Script('trainingSnapshotCodec.encode({'+snapshot.names.join(',')+'})');
   const restoreScript=new vm.Script('({'+snapshot.names.join(',')+'}=trainingSnapshotCodec.decode(JSON.parse(globalThis.trainingSnapshotInput)))');
   let env=context.BananaAI.createEnvironment({...options,sourceDigest});
   function startReplay(tape){if(tape.sourceDigest!==sourceDigest)throw Error('Replay requires the exact recorded game sources');resetMetrics();const playback=context.BananaAI.createReplay(tape);env=playback.environment;return playback;}
-  return {metrics:()=>({...context.trainingItemMetrics}),reset(nextOptions){
+  return {setActionHistory(actions){context.trainingActionHistory=JSON.parse(JSON.stringify(actions));},damageEvents:()=>JSON.parse(JSON.stringify(context.trainingDamageEvents)),metrics:()=>({...context.trainingItemMetrics}),reset(nextOptions){
       if(nextOptions===undefined){resetMetrics();return env.reset();}
       for(const key of ['width','height','mobile'])if(nextOptions[key]!==undefined&&nextOptions[key]!== (options[key]??({width:1000,height:650,mobile:false}[key])))throw Error('Profile changes require a new environment');
       resetMetrics();env=context.BananaAI.createEnvironment({...options,...nextOptions,sourceDigest});return env.observe();
