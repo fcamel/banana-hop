@@ -22,6 +22,8 @@ npm run training:baseline -- --run-id rule-test --seed 7 --seconds 15
 
 這會實際用規則 AI 跑一場「蕉片崛起」，最多生存 60 秒，不繼續打 Boss；記錄第 1 代及 Replay，清楚標記為「規則 AI 基準（非 NN）」。不生成虛構分數，也不代表已訓練 NN。重複使用同一 runId 的第 1 代會被拒絕；預設 runId 自動帶時間。
 
+NN 訓練器的曲線與 Replay 依每代快評保存；模型 `best.json` 另由較大候選驗證集選出，可能與曲線最高代不同。驗證歷史、最終測試與 optimizer 診斷目前保存在 run 目錄的 JSON／JSONL，尚未顯示於此介面，詳見 [NN_TRAINING.md](NN_TRAINING.md)。
+
 ## 保留與容量
 
 - 分數歷史保存在 `.training/metrics.sqlite3`，不隨 Replay 輪替刪除。

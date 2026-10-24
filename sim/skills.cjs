@@ -35,7 +35,7 @@ function skillContext(o){
   const available=[true,ready&&hasEnemy,jumpable&&hasEnemy,jumpable,!o.special&&p.charge>=100,!o.special&&p.surfStock>0,ready&&p.milkFuel>0,...itemSkills.map(s=>ready&&(s.itemKind!=='surfPickup'||p.surfStock<3)&&slots.some(t=>t?.kind===s.itemKind))];
   const onlyZero=n=>Array.from({length:n},(_,i)=>i===0),anyDirection=directions.map(()=>true),moving=directions.map((_,i)=>i>0);
   return {skills:available,parameters:skills.map((_,i)=>({
-    direction:i===1||i===2||skills[i].itemKind?onlyZero(directions.length):i>=3&&i<=5?moving:anyDirection,
+    direction:(i===0&&(p.down>0||p.recoil>0))||i===1||i===2||skills[i].itemKind?onlyZero(directions.length):i>=3&&i<=5?moving:anyDirection,
     target:skills[i].itemKind?slots.map(t=>t?.kind===skills[i].itemKind):i===1||i===2?slots.map(isEnemy):onlyZero(targetCount),
     travel:skills[i].itemKind?[true,!p.milkFuel&&(p.z>1||p.jumpLock<=0)]:onlyZero(2)
   }))};

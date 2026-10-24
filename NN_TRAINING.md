@@ -1,6 +1,6 @@
 # NN 訓練：蕉片崛起生存階段
 
-更新日期：2026-10-22。已實作 CPU NN／PPO、survival-only 訓練、固定 seeds 評估、checkpoint 續訓與開發模式每局自動 Replay。這是可執行的第一版訓練流程，不代表模型已學會過關。現有模擬介面見 [SIMULATION.md](SIMULATION.md)，現行玩法以 [GAMEPLAY.md](GAMEPLAY.md) 為準。
+更新日期：2026-10-24。已實作 CPU NN／PPO、survival-only 訓練、固定 seeds 評估、checkpoint 續訓與開發模式每局自動 Replay。這是可執行的第一版訓練流程，不代表模型已學會過關。現有模擬介面見 [SIMULATION.md](SIMULATION.md)，現行玩法以 [GAMEPLAY.md](GAMEPLAY.md) 為準。
 
 ## 目標與訓練方式
 
@@ -50,6 +50,31 @@ PPO 保存收集當時的條件遮罩與聯合 log probability，更新時沿用
 
 新增技能時須定義可開始條件、參數遮罩、控制器、完成／中斷與超時條件，並增加獨立場景測試；不要因單次死亡就加戰術。先區分選錯技能／參數與執行器失敗，再判斷現有能力是否真的無法表達所需行為。移動與等待保留作為組合出口。
 
+## 物件編碼與 Attention 架構
+
+新 run 預設使用 `entity-attention-v1`，維持原來的可見觀察契約；不加入預測軌跡或引擎未來資訊。同類物件共用編碼器，不同類型各用自己的編碼器，主角／場地／目前任務另編成主角 token。所有存在的 token 一起做 self-attention，再以主角作 query 對已更新的 token 作 attention pooling 形成局面；缺額不建立 token；不把「第幾近」當作位置嵌入。各層寬度、head 數與其他參數統一見 [GAMEPLAY.md](GAMEPLAY.md)。
+
+```mermaid
+flowchart TD
+    Visible[目前可見的各類物件] --> Encoders[各類物件共用編碼器]
+    Player[主角、場地與自己目前任務] --> PlayerEncoder[主角編碼器]
+    Encoders --> Attention[所有有效 token 一起 Self-Attention]
+    PlayerEncoder --> Attention
+    Attention --> Pool[主角 query 對更新後的 token 作 Attention Pooling]
+    Pool --> Scene[局面向量]
+    Attention --> Objects[各目標 token：保留個別身分]
+    Scene --> Global[技能、方向、走跳、Value]
+    Scene --> Target[以所選技能為條件的共用目標評分]
+    Objects --> Target
+    Global --> Target
+    Target --> Action[技能控制器與正常遊戲輸入]
+    Global --> Action
+```
+
+目標評分不再使用固定槽位的獨立輸出 weights。每個可選目標以其更新後的 token，對照局面與已選技能評分；同一物件換槽位時，分數跟著物件移動，而非跟著槽位。技能先抽樣後才建立該技能的目標分數；PPO 依收集時的技能及遮罩重建相同聯合機率，梯度同時回傳到目標評分、Attention 與各類編碼器。Value 只讀局面，不受本次抽到哪個技能影響。
+
+這是結構上的學習偏好，不保證已懂密集彈幕或能規劃未來。仍需比較固定評估 seeds、實際模擬秒數與訓練耗時；self-attention 計算量隨可見 token 數平方成長，不能只按參數數量或代數推估成本。保持原 top-k 與物件上限，不為了加速改遊戲難度。可用 `--architecture mlp` 保留平鋪 MLP 對照。新架構需開新 run，舊權重不自動遷移；已錄 Replay 仍可播放。
+
 ## Objective 與 episode 結束
 
 最終目標：最大化跨不同 seeds 與策略抽樣的預期存活秒數，單場最多 60 秒。
@@ -79,27 +104,30 @@ PPO 保存收集當時的條件遮罩與聯合 log probability，更新時沿用
 BANANA_AI_REPLAY=1 npm start
 # 另一個 terminal：第一代評估初始權重，後續每代更新一次。
 npm run training:nn -- --generations 10 --run-id milk-ppo-01 --curriculum-replay /absolute/path/breakthrough.json
-# 可加 --warm-start /absolute/path/best.json，沿用相同輸入契約的權重，另開 Adam。
+# 預設為 Attention；可加 --architecture mlp 建立原平鋪 MLP 對照。
+# --hidden 控制模型寬度；Attention 的寬度限制見 GAMEPLAY.md。
+# 可加 --warm-start /absolute/path/best.json，沿用同架構／寬度／輸入契約的權重，另開 Adam。
 # 續訓 10 代；保留原模型、Adam 狀態、隨機串流和設定。
 npm run training:nn -- --resume .training/models/milk-ppo-01/latest.json --generations 10
 ```
 
 開啟 <http://127.0.0.1:8893/training/> 即可看結果。`--workers 2` 可限制 CPU worker 數；`--directory /absolute/path` 或 `BANANA_TRAINING_DIR` 可指定資料目錄，server 必須使用同一路徑。`--help` 顯示入口；訓練設定及界線見 [GAMEPLAY.md](GAMEPLAY.md)。首輪可用 `--rollout 32 --epochs 2` 快速驗證管線，但較小樣本不代表足夠學習。
 
-- `sim/ppo.cjs`：兩層 tanh MLP，共用主幹、四個帶條件遮罩的策略頭與價值頭；PPO-Clip、熵項、完整 episode 的 Monte Carlo 回報、Adam、梯度裁剪與 KL 提早停止。沒有 GPU backend。梯度有有限差分測試。
+- `sim/attention.cjs`：物件編碼、有效 token 的 self-attention／殘差前饋、局面輸出與帶技能條件的共用目標評分；手寫解析反向傳播，由 PPO 端到端更新。
+- `sim/ppo.cjs`：模型 factory、原 tanh MLP 對照、共用條件抽樣；PPO-Clip、熵項、完整 episode 的 Monte Carlo 回報、Adam、梯度裁剪與 KL 提早停止。沒有 GPU backend。梯度有有限差分測試。
 - `sim/telegraph.cjs`：三種敵人當前可見蓄力的剩餘時間及有效旗標。
 - `sim/item-metrics.cjs`：Node 專用事件計數，統計三種實際取物次數及噴射秒數；不把計數當 NN 輸入或獎勵。
 - `sim/motion.cjs`：僅使用連續可見位置差的速度估計，離開畫面後清除歷史。
 - `sim/skills.cjs`：技能目錄、各道具獨立取得技能、可見目標槽、技能／參數遮罩與有限時間的底層控制器。只讀取觀察，輸出正常遊戲輸入。
-- `sim/curriculum.cjs`：中局由規則 AI 真實操作產生，突破組取已驗證 Replay 的終點前數秒並補滿 HP；具體比例、時點及池大小見 GAMEPLAY.md。缺少盤面會失敗，不退回開局。內部 late 組鍵 `50` 表示突破類別，並非固定起始秒數。
+- `sim/curriculum.cjs`：開局與最佳突破終局前盤面各占相同 loss 比重；突破盤面從已驗證 Replay 取出並設定 HP；具體比例、時點及池大小見 GAMEPLAY.md。缺少盤面會失敗，不退回開局。內部 late 組鍵 `50` 表示突破類別，並非固定起始秒數。
 - `sim/snapshot.cjs`：Node 專用完整世界快照編碼，保留共享引用與 Set／Map。建立後直接恢復，不反覆重演前綴；不更改正式遊戲與 Replay 來源雜湊。
 - `sim/training-worker.cjs`：長駐 Node worker 各自擁有獨立 VM，載入正式遊戲；主程序按代批次傳送權重與收回經驗，不逐物理步啟動外部程序。訓練 episode 的 Replay 關閉；評估才錄代表場次。
-- `scripts/train-nn.cjs`：收集完整 episode、更新、評估及寫入儀表板；三份 rollout 從開局／30 秒中局／突破前盤面開始，按前、中、後期指定比重分配最低筆數。`--rollout` 代表最低總量的三分之一，具體預設、比重與配額見 [GAMEPLAY.md](GAMEPLAY.md)。額度以技能決策筆數計算；同一筆可能包含多個底層控制 tick，所以不能與舊按鍵訓練直接按筆數比較效率，應看模擬物理步／秒數與實際耗時。每組未達額就從同類起點重開；達額後仍跑到死亡或任務完成，最後一場不截斷。收集期間權重固定，worker 數只影響併行量。尾段增加筆數後，按各組實收筆數加權 policy、value、entropy loss 及 KL 統計，維持指定起點比重；advantage 標準化亦按相同比重計算。先比較不動、相同離散操作的隨機控制器、現有規則 AI；隨機基準也改為均勻選可用技能與有效參數。規則 AI 不是 NN 的模仿學習目標。
+- `scripts/train-nn.cjs`：收集完整 episode、更新、評估及寫入儀表板；兩份 rollout 從開局／最佳突破終局前盤面開始，按指定比重分配最低筆數。`--rollout` 代表最低總量的三分之一，具體預設、比重與配額見 [GAMEPLAY.md](GAMEPLAY.md)。額度以技能決策筆數計算；同一筆可能包含多個底層控制 tick，所以不能與舊按鍵訓練直接按筆數比較效率，應看模擬物理步／秒數與實際耗時。每組未達額就從同類起點重開；達額後仍跑到死亡或任務完成，最後一場不截斷。收集期間權重固定，worker 數只影響併行量。尾段增加筆數後，按各組實收筆數加權 policy、value、entropy loss 及 KL 統計，維持指定起點比重；advantage 標準化亦按相同比重計算。先比較不動、相同離散操作的隨機控制器、現有規則 AI；隨機基準也改為均勻選可用技能與有效參數。規則 AI 不是 NN 的模仿學習目標。
 - gamma=1；每步 reward 就是有效時間差，累計等於存活秒數。每一場完成後往回累加實際 reward，得到每步的 Monte Carlo reward-to-go；value target 不包含 Critic 估計，原始 advantage=實際回報−當時 value。沒有 GAE、lambda 或截斷 bootstrap；Critic 仍作為降低策略梯度波動的 baseline，目標不含估計不代表單場樣本沒有隨機波動。價值 loss 的誤差以 60 秒為單位縮放，策略 advantage 加權標準化，沒有加入額外任務獎懲。更新後丟棄 rollout buffer。可變筆數及末尾不足的 minibatch 都會訓練，更新次數隨資料量改變。
-- 評估固定四個未參與訓練的 seeds，全部使用桌機配置，使用固定且獨立的策略抽樣串流。新生成訓練 seeds 限低位區間，匯入舊突破可來自先前評估區間，本批新評估 seeds 與兩者分離。每代評估仍全部從 0 秒開始；輸出平均、最低、60 秒達成率及各階段實際耗時，另記錄各起點類別的最低／實收技能決策筆數、完成 episode 數、loss 比重、物理步數、技能使用次數、三種道具實際取得數與噴射秒數，以及 0～30／30～50／50～60 秒區段的資料筆數（按技能開始時刻歸類）（CLI 與 checkpoint 的 `training`，尚未加入儀表板欄位）；完整個別分數及每場 `evaluation.itemMetrics` 寫入 checkpoint，CLI 另列 `evaluationItemMetrics`；新增統計尚未加入儀表板欄位。另記錄真正扣血的原因及最近三次決策：`training.starts.*.damage` 為訓練彙總，checkpoint 的 `evaluation.damage` 與 CLI 的 `evaluationDamage` 含每場彙總與事件明細；格式、時間區段與清除規則見 GAMEPLAY.md。每代亦追加保存到該 run 的 `damage-history.jsonl`，不因 latest checkpoint 覆寫而遺失。診斷不進 NN 觀察或 reward，尚未新增儀表板欄位。不是以這四場直接做梯度更新。
-- 模型放在 `.training/models/<runId>/`，維持 initial／best／latest、baselines、starts 及 curriculum-probe 摘要，不保留每代權重。`best.json` 隨保存 Replay 的新高更新；舊門檻規則下曾未保存的新高，不會自動補回。checkpoint 包含權重、Adam、隨機狀態、來源、訓練程式雜湊與設定；原設定續訓須完全一致。改課程時另開 run；`--warm-start` 只載入相同來源／架構／輸入契約的權重，重新建立 Adam。新 run 必須提供 `--curriculum-replay`。Replay 的數量／容量配額另計，模型和快照池在其外。
-- 中局盤面維持原 HP；突破盤面只補 HP，其他狀態原樣保留，reward 從還原後開始計算。快照恢復不執行物理步，最後兩個可見觀察重建運動估計，保留前次輸入；固定步長、碰撞與物件量不變。每代另跑獨立訓練試跑，平均新高後更新突破池，下一代生效。首次試跑只建立基準，不覆蓋匯入的舊突破。
-- 本批固定四個新評估 seeds，全部從 0 秒開始且不補血，評估 Replay 不回流訓練；初始舊突破用過的 seeds 與本批評估分離。獨立訓練試跑可用來選課程，但不是額外評估成績。具體 seeds 與課程比重只在 GAMEPLAY.md 維護。
+- 每代快評固定四個未參與訓練的 seeds，全部使用桌機配置，使用固定且獨立的策略抽樣串流。新生成訓練 seeds 限低位區間，匯入舊突破可來自先前評估區間，本批新評估 seeds 與兩者分離。每代評估仍全部從 0 秒開始；輸出平均、最低、60 秒達成率及各階段實際耗時，另記錄各起點類別的最低／實收技能決策筆數、完成 episode 數、loss 比重、物理步數、技能使用次數、三種道具實際取得數與噴射秒數，以及 0～30／30～50／50～60 秒區段的資料筆數（按技能開始時刻歸類）（CLI 與 checkpoint 的 `training`，尚未加入儀表板欄位）；完整個別分數及每場 `evaluation.itemMetrics` 寫入 checkpoint，CLI 另列 `evaluationItemMetrics`；新增統計尚未加入儀表板欄位。另記錄真正扣血的原因及最近三次決策：`training.starts.*.damage` 為訓練彙總，checkpoint 的 `evaluation.damage` 與 CLI 的 `evaluationDamage` 含每場彙總與事件明細；格式、時間區段與清除規則見 GAMEPLAY.md。每代亦追加保存到該 run 的 `damage-history.jsonl`，不因 latest checkpoint 覆寫而遺失。診斷不進 NN 觀察或 reward，尚未新增儀表板欄位。不是以這四場直接做梯度更新。
+- 模型放在 `.training/models/<runId>/`，維持 initial／quick-best／best／latest、baselines、starts 及 curriculum-probe 摘要，不保留每代權重。`quick-best.json` 隨四場快評新高更新；`best.json` 獨立依候選驗證平均更新，與 Replay 保存不綁定；舊門檻規則下曾未保存的新高，不會自動補回。checkpoint 包含權重、Adam、隨機狀態、來源、訓練程式雜湊與設定；原設定續訓須完全一致。改課程時另開 run；`--warm-start` 只載入相同來源／架構／輸入契約的權重，重新建立 Adam。新 run 必須提供 `--curriculum-replay`。Replay 的數量／容量配額另計，模型和快照池在其外。
+- 不再建立固定中局課程；突破盤面只將 HP 設為指定值，其他狀態原樣保留，reward 從還原後開始計算。快照恢復不執行物理步，最後兩個可見觀察重建運動估計，保留前次輸入；固定步長、碰撞與物件量不變。匯入紀錄建立最佳單場基準；每代另跑獨立訓練試跑，只有單場秒數新高才替換整個突破池，下一代生效。
+- 快評、候選驗證及最終測試使用互不重疊的 seeds，全部從 0 秒開始且不補血，任何評估 Replay 都不回流訓練；初始舊突破用過的 seeds 與本批評估分離。獨立訓練試跑可用來選課程，但不是額外評估成績。具體 seeds 與課程比重只在 GAMEPLAY.md 維護。
 - Ctrl+C／SIGTERM 會在本代完成及儲存後停止。訓練與儀表板寫入不是跨檔案交易；若在寫入兩者之間強制 kill，可能留下 `pending-*`，此時不要覆寫既有代數，先保留該目錄並檢查最後紀錄。一般停止與正常續訓已支援。
 
 初期幾代的曲線可能下降；這證明能執行更新，不代表已收斂。NN 已限制 viewport 內物件，仍使用精確的結構化狀態與自身／場地資訊，並非圖片辨識。未實作 RNN、模仿預訓練、GPU 或直接將 checkpoint 載入遊戲操控。檢視行為先透過 Replay，播放不需模型。更換目標或調參請另開 run，避免混合不可比較的成績。
@@ -120,3 +148,43 @@ npm run training:nn -- --resume .training/models/milk-ppo-01/latest.json --gener
 開啟 AI／Replay 開發旗標時，瀏覽器每局自動暫存，已移除「記錄 Replay」勾選框；結束後決定是否下載。回主選單保留當局，真正開始新局才清除上局；暫停／繼續不清除。僅存記憶體，不自動上傳或寫硬碟，重新載入頁面會遺失未下載紀錄。旗標關閉時保持原來的手動流程，不建立 Replay；正式部署預設關閉。
 
 開發旗標開啟時，一般手動操作與 AI 均經過 seeded RNG、固定步長與錄製管線。鍵盤／觸控將按下邊緣與持續狀態分開，暫停清空輸入並停止物理步；Replay 記錄實際送入模擬的操作。訓練的 rollout buffer（觀察、reward、機率等）與供觀看的 Replay 是不同資料，批次訓練不應永久保留所有歷史場次。
+
+
+## 候選驗證與更新診斷
+
+儀表板曲線與代表 Replay 延續每代快評，方便比較既有記錄。另以較大的固定驗證集挑選 `best.json`：初代、快評新高與固定代數間隔才加跑，降低每代成本，同時讓快評退步的模型仍有被驗證的機會。場次、間隔與 seeds 統一見 [GAMEPLAY.md](GAMEPLAY.md)。`validation-history.jsonl` 保留每次驗證、快評平均與是否入選；快評最佳另存 `quick-best.json`。驗證不更新 weights，不取代持續訓練的 latest，也不回流課程。
+
+正常完成指定代數後，另用獨立測試集檢查驗證選出的模型，寫入 `test.json`；中斷後完成當代 checkpoint 即停，不額外測試。續訓完成時會重新測試當時最佳模型。測試只用於最後報告，若根據測試結果反覆調參，就應換新的測試 seeds，避免將測試集變成另一個驗證集。
+
+`optimizer.diagnostics` 對更新後固定權重及完整舊 rollout 計算各條件 head 的 KL 總和、policy entropy、各 head 的有效選擇比例，以及 value 更新前後對真實 Monte Carlo 回報的 MAE、bias、explained variance。正規化 entropy 只統計該 head 有多個合法選項的資料，避免倒地等待造成假性低 entropy；沒有可選資料則為 null。`epochStats` 的 KL 是各 minibatch 在更新當時的數值，不能與最終整批 KL 混稱。診斷多花一次 forward，既有梯度、KL guard 及 learning rate 保持不變；新增欄位先保存於 CLI／checkpoint，未加入儀表板。
+
+課程與訓練程式已變更，應另開 run。可用 `--warm-start` 載入相同架構／寬度／輸入契約的舊 Attention weights，重新建立 Adam；不能直接以舊 implementation digest 續訓。普通移動在倒地／受擊彈退時只剩中立方向，避免學到原控制器根本不執行的選擇，仍保留這些經驗訓練 value；可用的緊急技能維持原有選向。
+
+
+## 九宮格區域 Attention 試作
+
+`--architecture regions` 選用 `region-attention-v2`，原 `--architecture attention` 保留為對照及預設。輸入與短技能動作契約完全相同；九宮格是可訓練的觀察彙整，不是九個新動作，也不預先給安全答案。幾何、維度與參數數量見 [GAMEPLAY.md](GAMEPLAY.md)。
+
+```text
+可見物件 → 共用類別編碼器 → 物件 self-attention
+                              ├→ 原整體局面向量 ──────────┐
+                              ├→ 九個有畫面座標的區域池 ──┤
+                              └→ 個別物件目標 key         │
+                                           融合整體與九格 ←┘
+                                                ↓
+                            原技能／方向／走跳／Value 與目標 query
+```
+
+各區對所有 token 使用相同的關係 NN：串接物件向量與區域相對位置，得到 relation，再算 score 及 value 向量。每格獨立 softmax 彙整，沒有硬分格或跨格切換；區外子彈也可影響該區。區域 pooling 的 value 只是被加權的向量，不是 critic 的存活秒數預測。幾何位置固定了區域參考；是否學到有用的區域風險仍須用訓練與對照盤面檢驗，單元測試不代表已學會安全判斷。
+
+```sh
+# 另開實驗；不要以舊 Attention checkpoint 直接 resume 或 warm-start。
+npm run training:nn -- --architecture regions --generations 10 --run-id milk-regions-01 --curriculum-replay /absolute/path/breakthrough.json
+```
+
+新增區域路徑以 PPO 的同一個 loss 端到端更新，沒有額外標籤、引擎預演、未來落點或人工路線。所有區域使用相同權重，融合時保留固定空間順序；個別物件目標仍保留。測試包含全參數數值梯度、區域幾何與可視性、物件順序不變性／目標等變性、格線連續性、空場景、PPO 更新、checkpoint 及真實 Replay 驗證。CLI 儀表板批次名稱會標為九宮格 Attention，尚未新增區域向量的 UI 視覺化。
+
+
+九宮格 v2 額外讓每格知道「可行走面積比例」與「中心是否位於地圖內」，由原本已提供的四邊界距離和畫面投影計算；同時送入關係編碼與決策融合層，避免空白地圖外區域只能靠全局 Value 自行辨別。精確公式見 GAMEPLAY.md。區域中心在地圖內只是幾何上的可達，不保證移動途中安全；模型仍自行選方向。空場景也保留地形資訊，玩家跳起來不會令地圖邊界改變。v1 權重維度維持相容載入，v2 必須另開模型；不自動遷移舊權重或 Adam。測試增加四邊／角落、桌機／手機 viewport、跳躍高度不變性、地形進入兩條決策路徑與舊架構載入覆蓋。
+
+目前課程採開局與最佳終局前起點兩組；比例、時間範圍及 HP 以 GAMEPLAY.md 為準。還原不額外給無敵，第一次真實扣血才按遊戲規則取得保護。新課程需另開 run，可 warm-start 同架構最佳權重；不改已啟動的舊批次設定。

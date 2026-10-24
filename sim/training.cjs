@@ -44,7 +44,7 @@ function trainingEnvironment(options={}){
       if(options.record||!Array.isArray(options.startSnapshots)||!options.startSnapshots.length)throw Error('Curriculum restoration requires nonempty snapshots and recording off');
       const entry=options.startSnapshots[((options.seed??1)+resetIndex++)%options.startSnapshots.length];
       require('./curriculum.cjs').validateStart(entry,{width:options.width??1000,height:options.height??650,mobile:options.mobile??false});
-      if(entry.snapshot){env.restoreSnapshot(entry.snapshot,{heal:entry.heal===true});for(const o of entry.tail||[])history.update(o);}else env.restoreTape(entry.tape,o=>history.update(o));previous=[...entry.previous];
+      if(entry.snapshot){env.restoreSnapshot(entry.snapshot,{heal:entry.heal===true,hp:entry.startHp});for(const o of entry.tail||[])history.update(o);}else env.restoreTape(entry.tape,o=>history.update(o));previous=[...entry.previous];
     }
     observation=env.observe();history.update(observation);initialReward=env.summary().reward;initialTime=observation.time;initialMetrics=env.metrics();initialDamageIndex=env.damageEvents().length;return encode(observation,previous,history);
   }

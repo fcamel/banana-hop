@@ -27,12 +27,14 @@ function createEnvironment(options={}){
     },observe:()=>env.observe(),step:(action,frames)=>env.step(action,frames),summary:()=>env.summary(),replay:()=>env.replay(),policy:observation=>env.policy(observation),features:context.BananaAI.features,sourceDigest,
     replayTape:startReplay,
     snapshot(){if(env.config.mode!=='milk'||!env.config.survivalOnly||env.summary().outcome!=='running')throw Error('Snapshots require live milk survival training');return {schema:1,sourceDigest,config:{...env.config},time:env.observe().time,world:JSON.parse(JSON.stringify(captureScript.runInContext(context)))};},
-    restoreSnapshot(saved,{heal=false}={}){
+    restoreSnapshot(saved,{heal=false,hp}={}){
+      if(hp!==undefined&&(!Number.isInteger(hp)||hp<1||hp>5||heal))throw Error('Invalid snapshot HP override');
       if(options.record||saved.schema!==1||saved.sourceDigest!==sourceDigest||saved.config.mode!=='milk'||!saved.config.survivalOnly)throw Error('Invalid training snapshot');
       for(const key of ['width','height','mobile'])if(saved.config[key]!==env.config[key])throw Error('Snapshot profile changed');
       resetMetrics();env=context.BananaAI.createEnvironment({...saved.config,record:false,sourceDigest});
       context.trainingSnapshotInput=JSON.stringify(saved.world);try{restoreScript.runInContext(context);}finally{delete context.trainingSnapshotInput;}
       if(heal)new vm.Script('player.hp=5').runInContext(context);
+      if(hp!==undefined)new vm.Script('player.hp='+hp).runInContext(context);
       if(env.summary().outcome!=='running'||Math.abs(env.observe().time-saved.time)>1e-7)throw Error('Snapshot must restore a live matching time');
       return env.observe();
     },

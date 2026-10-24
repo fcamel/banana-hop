@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),{createEnvironment}=require('../sim/environment.cjs');
 const {Network,Random,Adam,policySize,lossAndGradient,monteCarloReturns,optimize}=require('../sim/ppo.cjs');
 const {contract,featureCount,groups,decisionFrames,inViewport,encode,actionFor,trainingEnvironment,skillEnvironment}=require('../sim/training.cjs');
-const {createStartBank,validateBank,rolloutJobs,decisionBudgets,weightRollouts,materialize,breakthroughStarts}=require('../sim/curriculum.cjs');
+const {createStartBank,validateBank,rolloutJobs,decisionBudgets,weightRollouts,materialize,breakthroughStarts,breakthroughTimes}=require('../sim/curriculum.cjs');
 const {MotionHistory}=require('../sim/motion.cjs');
 const {skills,heads,targetSlots,skillContext,validateChoice,createOption,optionControl}=require('../sim/skills.cjs');
 const {execute}=require('../sim/training-worker.cjs');
@@ -81,14 +81,14 @@ test('Authentic 30s/50s starts restore the full world, controls and future RNG w
 });
 test('Curriculum uses weighted minimum budgets, finishes every episode and keeps resets in the assigned stage',()=>{
   const bank=startFixture(),config={...trainingSetup(),hidden:4},net=new Network(featureCount,4,new Random(1));
-  const jobs=rolloutJobs({config,random:new Random(1),parameters:net.parameters,banks:[bank]});assert.deepEqual(jobs.map(j=>j.startAt),[0,30,50]);assert.deepEqual(jobs.map(j=>j.decisions),[1075,1075,922]);
+  const jobs=rolloutJobs({config,random:new Random(1),parameters:net.parameters,banks:[bank]});assert.deepEqual(jobs.map(j=>j.startAt),[0,50]);assert.deepEqual(jobs.map(j=>j.decisions),[1536,1536]);
   for(const n of [8,32,1024,16384])assert.equal(decisionBudgets(n).reduce((a,b)=>a+b),3*n);
   assert.equal(jobs.reduce((n,j)=>n+j.decisions,0),3072);
   for(const job of jobs){const result=execute({...job,decisions:4});assert.ok(result.buffer.length>=4);assert.equal(result.buffer.at(-1).terminated,true);let rewards=0;for(let i=result.buffer.length-1;i>=0;i--){const t=result.buffer[i];if(t.terminated)rewards=0;rewards+=t.reward;assert.ok(Math.abs(t.target-rewards)<1e-8);assert.ok(Math.abs(t.advantage-(t.target-t.value))<1e-8);}assert.equal(result.startAt,job.startAt);assert.ok(Math.abs((60-result.buffer[0].features[15]*60)-job.startAt)<1e-6);assert.equal(Object.values(result.timeBuckets).reduce((a,b)=>a+b),result.buffer.length);}
   const entry=bank.starts[50][0],env=trainingEnvironment({...bank.profile,startSnapshots:[entry]});let deaths=0;
   for(let i=0;i<220;i++){const r=env.step([0,0,0,0]);if(r.terminated){deaths++;env.reset(i+1);assert.ok(Math.abs(env.observe().time-50)<1e-6);assert.equal(env.summary().reward,0);}}
-  assert.ok(deaths>=2);assert.throws(()=>execute({...jobs[2],kind:'evaluate'}),/must start at 0s/);assert.throws(()=>execute({...jobs[1],kind:'baseline'}),/must start at 0s/);assert.throws(()=>execute({...jobs[1],startSnapshots:bank.starts[50]}),/match their assigned stage/);
-  const late=execute({...jobs[2],decisions:128});assert.ok(late.buffer.length>=128&&late.buffer.length<228);assert.equal(late.buffer.at(-1).terminated,true);assert.ok(late.episodes>=1);assert.equal(late.timeBuckets[50],late.buffer.length);assert.ok(late.buffer.every(t=>t.features[15]<=10/60+1e-6));for(const t of late.buffer.filter(t=>t.terminated))assert.ok(Math.abs(t.target-t.reward)<1e-6,'No bootstrap or previous episode reward at a true terminal');
+  assert.ok(deaths>=2);assert.throws(()=>execute({...jobs[1],kind:'evaluate'}),/must start at 0s/);assert.throws(()=>execute({...jobs[1],kind:'baseline'}),/must start at 0s/);assert.throws(()=>execute({...jobs[1],startSnapshots:bank.starts[30]}),/match their assigned stage/);
+  const late=execute({...jobs[1],decisions:128});assert.ok(late.buffer.length>=128&&late.buffer.length<228);assert.equal(late.buffer.at(-1).terminated,true);assert.ok(late.episodes>=1);assert.equal(late.timeBuckets[50],late.buffer.length);assert.ok(late.buffer.every(t=>t.features[15]<=10/60+1e-6));for(const t of late.buffer.filter(t=>t.terminated))assert.ok(Math.abs(t.target-t.reward)<1e-6,'No bootstrap or previous episode reward at a true terminal');
   const opening=trainingEnvironment({seed:7});assert.equal(opening.observe().time,0);
 });
 test('PPO analytic gradients agree with finite differences across layers, entropy and both clipping branches',()=>{
@@ -118,8 +118,8 @@ test('Checkpoint preserves optimizer and random stream for reproducible continua
 });
 
 test('Completed tails keep exact stage loss mass and weighted advantage normalization',()=>{
-  const results=[{startAt:0,buffer:Array.from({length:7},()=>({advantage:2}))},{startAt:30,buffer:Array.from({length:5},()=>({advantage:4}))},{startAt:50,buffer:Array.from({length:4},()=>({advantage:8}))}];
-  const buffer=weightRollouts(results);for(const [i,share] of [.35,.35,.30].entries())assert.ok(Math.abs(results[i].buffer.reduce((s,t)=>s+t.weight,0)/buffer.length-share)<1e-12);
+  const results=[{startAt:0,buffer:Array.from({length:7},()=>({advantage:2}))},{startAt:50,buffer:Array.from({length:4},()=>({advantage:8}))}];
+  const buffer=weightRollouts(results);for(const [i,share] of [.5,.5].entries())assert.ok(Math.abs(results[i].buffer.reduce((s,t)=>s+t.weight,0)/buffer.length-share)<1e-12);
   const net=new Network(3,4,new Random(1)),adam=new Adam(net.parameters.length),rng=new Random(2);
   for(const t of buffer){t.features=Float64Array.from([0,.1,.2]);Object.assign(t,net.sample(t.features,rng));t.target=1;}
   optimize(net,adam,buffer,rng,{epochs:1,batchSize:3});
@@ -259,16 +259,19 @@ test('Instant training snapshots preserve all future world updates and RNG, and 
   assert.deepEqual(normalize(a.observe()),normalize(b.observe()));
   const healed=createEnvironment();healed.restoreSnapshot(entry.snapshot,{heal:true});
   assert.deepEqual(normalize(healed.observe()),normalize({...a.observe(),player:{...a.observe().player,hp:5}}));
+  const two=createEnvironment();two.restoreSnapshot(entry.snapshot,{hp:2});assert.deepEqual(normalize(two.observe()),normalize({...a.observe(),player:{...a.observe().player,hp:2}}));
+  for(const hp of [0,6,1.5,NaN])assert.throws(()=>two.restoreSnapshot(entry.snapshot,{hp}),/HP override/);
+  let wait=0;while(two.observe().player.hp===2&&wait++<600)two.step({});assert.equal(two.observe().player.hp,1);assert.ok(two.observe().player.inv>0,'The first normal hit grants normal invulnerability');
   for(let i=0;i<100;i++){const action={x:i%3-1,y:.5,jump:i%20===0,jet:true,dash:i===8};a.step(action);b.step(action);assert.deepEqual(normalize(a.observe()),normalize(b.observe()));}
   b.restoreSnapshot(entry.snapshot);assert.ok(Math.abs(b.observe().time-entry.startAt)<1e-8);assert.equal(b.observe().player.hp,entry.snapshot.config?startFixture().starts[50][0].tape.result.hp:0);
   assert.throws(()=>createEnvironment({record:true}).restoreSnapshot(entry.snapshot),/Invalid/);
 });
-test('Breakthrough curriculum uses real pre-terminal times, heals without changing time, and never enters evaluation',()=>{
+test('Breakthrough curriculum uses real pre-terminal times, sets HP to two without changing time, and never enters evaluation',()=>{
   const source=createEnvironment({mode:'milk',seed:7,entrance:false,survivalOnly:true,record:true});while(source.summary().outcome==='running')source.step(source.policy(source.observe()),6);
-  const entries=breakthroughStarts(source.replay());assert.equal(entries.length,3);
-  for(const [i,entry] of entries.entries()){assert.ok(Math.abs(entry.startAt-(source.summary().gameSeconds-[3,2.5,2][i]))<1/60+1e-8);const env=trainingEnvironment({startSnapshots:[entry]});assert.equal(env.observe().player.hp,5);assert.equal(env.observe().time,entry.startAt);assert.equal(env.summary().reward,0);}
-  const bank=startFixture(),copy={...bank,starts:{30:bank.starts[30].map(materialize),50:entries}},net=new Network(featureCount,4,new Random(1));validateBank(copy,copy.profile);
-  const jobs=rolloutJobs({config:{...trainingSetup(),hidden:4},random:new Random(1),parameters:net.parameters,banks:[copy]});const r=execute({...jobs[2],decisions:1});assert.equal(r.buffer.at(-1).terminated,true);assert.ok(r.buffer[0].features[15]<.06);assert.throws(()=>execute({...jobs[2],kind:'evaluate'}),/must start at 0s/);
+  const entries=breakthroughStarts(source.replay());assert.equal(entries.length,5);
+  for(const [i,entry] of entries.entries()){assert.ok(Math.abs(entry.startAt-(breakthroughTimes(source.summary().gameSeconds)[i]/60))<1/60+1e-8);const env=trainingEnvironment({startSnapshots:[entry]});assert.equal(env.observe().player.hp,2);assert.equal(env.observe().time,entry.startAt);assert.equal(env.summary().reward,0);const original=env.observe();env.step([0,0,0,0]);env.reset();assert.equal(env.observe().player.hp,2);assert.equal(env.observe().player.inv,original.player.inv);assert.equal(env.observe().time,entry.startAt);assert.equal(entry.startHp,2);assert.throws(()=>validateBank({...startFixture(),starts:{50:[{...entry,startHp:5}]}},startFixture().profile),/two HP/);}
+  const bank=startFixture(),copy={...bank,starts:{50:entries}},net=new Network(featureCount,4,new Random(1));validateBank(copy,copy.profile);
+  const jobs=rolloutJobs({config:{...trainingSetup(),hidden:4},random:new Random(1),parameters:net.parameters,banks:[copy]});const r=execute({...jobs[1],decisions:1});assert.equal(r.buffer.at(-1).terminated,true);assert.ok(r.buffer[0].features[4]===2/5);assert.throws(()=>execute({...jobs[1],kind:'evaluate'}),/must start at 0s/);
 });
 
 test('Snapshot graph codec retains shared native Sets, Maps and nonfinite values across JSON',()=>{
