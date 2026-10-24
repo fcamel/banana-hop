@@ -1,14 +1,15 @@
 'use strict';
 const aiReplayEnabled=globalThis.BANANA_FEATURES?.aiReplay===true;
 $('aiOptions').hidden=!aiReplayEnabled;$('agentStatus').hidden=!aiReplayEnabled;
-for(const id of ['autoAgent','agentSeed','downloadReplay','importReplay'])$(id).disabled=!aiReplayEnabled;
+for(const id of ['autoAgent','agentSeed','downloadReplay','importReplay','replayBack','replayForward'])$(id).disabled=!aiReplayEnabled;
+let replaySeeking=false;
 let agentRun=null,lastAgentReplay=null,agentAccumulator=0,sourceDigestPromise=null,agentGeneration=0;
 async function browserSimulationDigest(){
   return sourceDigestPromise||=Promise.all(simulationSources.map(async name=>{const url=Array.from(document.scripts).find(script=>script.src&&new URL(script.src).pathname.endsWith('/'+name))?.src||name;const response=await fetch(url,{cache:'force-cache'});if(!response.ok)throw Error('無法讀取模擬版本');return name+'\n'+await response.text();})).then(async texts=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(texts.join('\n')))),n=>n.toString(16).padStart(2,'0')).join('')).catch(error=>{sourceDigestPromise=null;throw error;});
 }
 function preserveAgentReplay(){if(agentRun?.recording)lastAgentReplay=agentRun.environment.replay();}
 function agentMessage(text){$('agentStatus').textContent=aiReplayEnabled?text:'';}
-function stopAgentRun(){agentGeneration++;preserveAgentReplay();agentRun=null;agentAccumulator=0;stopSimulation();agentMessage('');}
+function stopAgentRun(){agentGeneration++;$('replayControls').hidden=true;preserveAgentReplay();agentRun=null;agentAccumulator=0;stopSimulation();agentMessage('');}
 async function startControlledGame(){
   stopAgentRun();const generation=agentGeneration;canvas.style.objectFit='';resize();
   lastAgentReplay=null;
@@ -42,7 +43,7 @@ function readManualAction(){
 }
 function advanceAgentFrame(dt){
   if(!aiReplayEnabled||!agentRun||!simulationSession?.active)return;
-  if(mobilePlayBlocked)return;
+  if(mobilePlayBlocked||replaySeeking)return;
   agentAccumulator+=Math.min(Math.max(0,dt),.25);
   try{
     while(agentAccumulator>=simulationDt&&state==='playing'&&simulationSession.active){
@@ -66,9 +67,35 @@ async function playAgentReplay(tape,generation=++agentGeneration){
   validateReplay(tape);const digest=await browserSimulationDigest();
   if(generation!==agentGeneration)return;
   if(tape.sourceDigest!==digest)throw Error('Replay 需要與錄製時相同的遊戲程式版本');
-  preserveAgentReplay();const playback=createReplay(tape);lastAgentReplay=tape;agentRun={environment:playback.environment,playback,recording:false};agentAccumulator=0;
-  canvas.style.objectFit='contain';resize();agentMessage('Replay 播放中 · P 暫停');
+  preserveAgentReplay();const playback=createReplay(tape);lastAgentReplay=tape;agentRun={environment:playback.environment,playback,tape,recording:false};agentAccumulator=0;
+  $('replayControls').hidden=false;canvas.style.objectFit='contain';resize();agentMessage('Replay 播放中 · P 暫停');
 }
+// Seek by replaying the same fixed-step inputs; never skip collision or RNG updates.
+async function seekAgentReplay(seconds){
+  if(!aiReplayEnabled||!agentRun?.playback||replaySeeking||!Number.isFinite(seconds))return;
+  const run=agentRun,generation=agentGeneration,wasPaused=state==='paused'||!simulationSession?.active;
+  const target=Math.max(0,Math.min(run.tape.steps,run.environment.steps+Math.round(seconds/simulationDt)));
+  const oldSound=sound;replaySeeking=true;sound=false;agentAccumulator=0;
+  for(const id of ['replayBack','replayForward'])$(id).disabled=true;
+  trainingReplayStatus('seeking','跳轉中…');
+  try{
+    if(target<run.environment.steps){run.playback=createReplay(run.tape);run.environment=run.playback.environment;}
+    state='playing';simulationSession.active=true;
+    while(run.environment.steps<target){
+      for(let i=0;i<120&&run.environment.steps<target;i++)run.playback.step();
+      await new Promise(resolve=>setTimeout(resolve,0));
+      if(agentRun!==run||generation!==agentGeneration)return;
+    }
+    const done=target===run.tape.steps;
+    if(done){run.playback.step();simulationSession.active=false;state=state==='over'?'over':'paused';}
+    else if(wasPaused){const spraying=milkPack?.spraying;pause();if(milkPack)milkPack.spraying=spraying;}
+    agentMessage(done?'Replay 播放完成 · 結果驗證通過':wasPaused?'Replay 已暫停':'Replay 播放中 · P 暫停');
+    trainingReplayStatus(done?'complete':wasPaused?'paused':'playing',done?'播放完成 · 結果驗證通過':wasPaused?'已暫停':'播放中');
+    resize();
+  }catch(error){if(agentRun===run){simulationSession.active=false;state='paused';agentMessage('Replay 錯誤：'+error.message);trainingReplayStatus('error',error.message);}}
+  finally{sound=oldSound;replaySeeking=false;agentAccumulator=0;for(const id of ['replayBack','replayForward'])$(id).disabled=!aiReplayEnabled;}
+}
+if(aiReplayEnabled){$('replayBack').addEventListener('click',()=>seekAgentReplay(-5));$('replayForward').addEventListener('click',()=>seekAgentReplay(5));}
 if(aiReplayEnabled)$('importReplay').addEventListener('change',async event=>{
   const file=event.target.files?.[0];if(!file)return;const generation=++agentGeneration;
   try{
@@ -99,6 +126,8 @@ if(aiReplayEnabled&&typeof window!=='undefined'&&typeof location!=='undefined'){
   window.addEventListener('blur',()=>{if(trainingReplayName&&simulationSession?.active&&state==='paused')trainingReplayStatus('paused','已暫停');});
   window.addEventListener('message',event=>{
     if(event.origin!==location.origin||event.source!==window.parent||!trainingReplayName||event.data?.type!=='banana-replay-control')return;
+    if(event.data.action==='seek')seekAgentReplay(event.data.seconds);
+    if(replaySeeking)return;
     if(event.data.action==='restart')playTrainingReplay(trainingReplayName);
     if(event.data.action==='pause'&&(state==='playing'||state==='paused')){const desired=event.data.paused!==false;if((state==='playing')===desired)pause();trainingReplayStatus(state,state==='paused'?'已暫停':'播放中');}
   });

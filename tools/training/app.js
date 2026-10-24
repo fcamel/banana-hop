@@ -3,13 +3,13 @@ const $=id=>document.getElementById(id),state={run:null,rows:[],runs:[],source:n
 const seconds=n=>Number(n).toFixed(2)+' 秒',mb=n=>(n/1000000).toFixed(2)+' MB';
 function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function svg(tag,attrs,text){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [key,value] of Object.entries(attrs))e.setAttribute(key,value);if(text!==undefined)e.textContent=text;return e;}
-function stopPlayer(){state.playing=null;$('player').src='about:blank';$('viewer').hidden=true;$('pause').disabled=$('restart').disabled=true;}
+function stopPlayer(){state.playing=null;$('player').src='about:blank';$('viewer').hidden=true;for(const id of ['pause','restart','back-five','forward-five'])$(id).disabled=true;}
 function play(row){
   if(!row.replay)return;
   const run=state.runs.find(r=>r.id===state.run);if(run.source_digest!==state.source)return;
   state.playing=row.replay;$('viewer').hidden=false;$('replay-title').textContent='第 '+row.generation+' 代 · '+(row.reason==='baseline'?'初代基準':'突破紀錄');
   $('replay-detail').textContent='評估平均 '+seconds(row.mean)+' · 此段 Replay '+seconds(row.replay_score)+' · '+mb(row.bytes);
-  $('play-status').textContent='載入遊戲與 Replay…';$('pause').disabled=$('restart').disabled=true;
+  $('play-status').textContent='載入遊戲與 Replay…';for(const id of ['pause','restart','back-five','forward-five'])$(id).disabled=true;
   $('player').src='/?trainingReplay='+encodeURIComponent(row.replay);$('viewer').scrollIntoView({behavior:'smooth',block:'start'});
 }
 function renderChart(){
@@ -66,6 +66,7 @@ async function load(runId=state.run,reset=false){
 }
 $('run').addEventListener('change',()=>load($('run').value,true));$('refresh').addEventListener('click',()=>load());$('saved-only').addEventListener('change',()=>{state.page=0;renderTable();});$('previous').addEventListener('click',()=>{state.page--;renderTable();});$('next').addEventListener('click',()=>{state.page++;renderTable();});$('close').addEventListener('click',stopPlayer);
 for(const action of ['pause','restart'])$(action).addEventListener('click',()=>$('player').contentWindow.postMessage({type:'banana-replay-control',action,paused:$('pause').textContent!=='繼續'},location.origin));
-window.addEventListener('message',event=>{if(event.origin!==location.origin||event.source!==$('player').contentWindow||event.data?.type!=='banana-replay-status'||event.data.name!==state.playing)return;const {status,message}=event.data;$('play-status').textContent=message;$('pause').disabled=!['playing','paused'].includes(status);$('pause').textContent=status==='paused'?'繼續':'暫停';$('restart').disabled=status==='loading';});
+for(const [id,seconds]of [['back-five',-5],['forward-five',5]])$(id).addEventListener('click',()=>$('player').contentWindow.postMessage({type:'banana-replay-control',action:'seek',seconds},location.origin));
+window.addEventListener('message',event=>{if(event.origin!==location.origin||event.source!==$('player').contentWindow||event.data?.type!=='banana-replay-status'||event.data.name!==state.playing)return;const {status,message}=event.data;$('play-status').textContent=message;$('pause').disabled=!['playing','paused'].includes(status);$('pause').textContent=status==='paused'?'繼續':'暫停';$('restart').disabled=['loading','seeking'].includes(status);for(const id of ['back-five','forward-five'])$(id).disabled=!['playing','paused','complete'].includes(status);});
 window.addEventListener('resize',()=>{if(state.rows.length)renderChart();});
 load();setInterval(()=>{if(!document.hidden&&!state.controller)load();},3000);

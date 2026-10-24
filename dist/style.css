@@ -197,3 +197,5 @@
 }
 
 body.replay-viewer .app{padding:0;max-width:none}body.replay-viewer header,body.replay-viewer .game-heading,body.replay-viewer footer,body.replay-viewer .bottom{display:none}body.replay-viewer .arena{height:100dvh;min-height:0;border:0;border-radius:0}body.replay-viewer{overflow:hidden}.ai-options a{color:inherit}
+
+.replay-controls{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:15}.replay-controls button{padding:8px 14px;border:1px solid #d3bf80;border-radius:8px;background:#f6f1dc;color:#302939;font:700 14px system-ui;cursor:pointer}.replay-viewer .replay-controls{display:none}
