@@ -7,4 +7,4 @@ function install(){
   function decode(data){const objects=data.nodes.map(n=>n.kind==='set'?new Set():n.kind==='map'?new Map():n.kind==='array'?[]:{});function unpack(v){return v&&typeof v==='object'?'ref'in v?objects[v.ref]:'number'in v?Number(v.number):undefined:v;}data.nodes.forEach((n,i)=>{const o=objects[i];if(n.kind==='set')for(const v of n.values)o.add(unpack(v));else if(n.kind==='map')for(const [k,v]of n.values)o.set(unpack(k),unpack(v));else if(n.kind==='array')for(const v of n.values)o.push(unpack(v));else for(const[k,v]of n.values)o[k]=unpack(v);});return unpack(data.value);}
   return {encode,decode};
 }
-module.exports={names,script:`globalThis.trainingSnapshotCodec=(${install.toString()})();`};
+module.exports={names,createCodec:install,script:`globalThis.trainingSnapshotCodec=(${install.toString()})();`};

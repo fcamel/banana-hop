@@ -64,13 +64,16 @@ class AttentionNetwork{
     logits.fill(-1e9,targetOffset,targetEnd);logits[targetOffset]=p[this.noneTarget];
     for(const t of cache.tokens.slice(1))if(t.slot!==null){let score=0;for(let k=0;k<d;k++)score+=cache.query[k]*t.targetKey[k];logits[targetOffset+t.slot]=score/Math.sqrt(d);}
   }
+  headBackward(c,out){return {out};}
   backward(c,out,g){
+    const extra=this.headBackward(c,out,g);out=extra.out;
     const d=this.width,h=d/this.headCount,n=c.tokens.length,tokens=c.tokens,dz=tokens.map(()=>zeros(d));
     const dg=Float64Array.from(globalIndices,i=>out[i]);const da=this.linearBack(this.output,c.actor,dg,g),dscene=this.linearBack(this.actor,c.scene,this.tanhBack(c.actor,da),g);
+    if(extra.sceneGradient)plus(dscene,extra.sceneGradient);
     g[this.noneTarget]+=out[targetOffset];const dq=zeros(d);
     for(let i=1;i<n;i++){const t=tokens[i];if(t.slot===null)continue;const s=out[targetOffset+t.slot]/Math.sqrt(d),dk=zeros(d);for(let k=0;k<d;k++){dq[k]+=s*t.targetKey[k];dk[k]=s*c.query[k];}plus(dz[i],this.linearBack(this.targetKey,t.z,dk,g));}
     const dquery=this.tanhBack(c.query,dq);for(let k=0;k<d;k++)g[this.skillEmbedding+c.skill*d+k]+=dquery[k];plus(dscene,this.linearBack(this.targetQuery,c.scene,dquery,g));
-    const dbase=this.sceneBackward(c,dscene,dz,g),dp=this.tanhBack(c.baseScene,dbase);plus(dz[0],dp);const dpoolMix=this.linearBack(this.poolO,c.pool.mix,dp,g),dpoolQ=zeros(d),dpoolK=tokens.map(()=>zeros(d)),dpoolV=tokens.map(()=>zeros(d));
+    const dbase=this.sceneBackward(c,dscene,dz,g,extra),dp=this.tanhBack(c.baseScene,dbase);plus(dz[0],dp);const dpoolMix=this.linearBack(this.poolO,c.pool.mix,dp,g),dpoolQ=zeros(d),dpoolK=tokens.map(()=>zeros(d)),dpoolV=tokens.map(()=>zeros(d));
     for(let head=0;head<this.headCount;head++){const start=head*h,weights=c.pool.weights[head],dw=zeros(n);let average=0;for(let j=0;j<n;j++){for(let k=start;k<start+h;k++){dw[j]+=dpoolMix[k]*c.pool.values[j][k];dpoolV[j][k]+=weights[j]*dpoolMix[k];}average+=weights[j]*dw[j];}for(let j=0;j<n;j++){const ds=weights[j]*(dw[j]-average)/Math.sqrt(h);for(let k=start;k<start+h;k++){dpoolQ[k]+=ds*c.pool.keys[j][k];dpoolK[j][k]+=ds*c.pool.q[k];}}}
     plus(dz[0],this.linearBack(this.poolQ,tokens[0].z,dpoolQ,g));for(let i=0;i<n;i++){plus(dz[i],this.linearBack(this.poolK,tokens[i].z,dpoolK[i],g));plus(dz[i],this.linearBack(this.poolV,tokens[i].z,dpoolV[i],g));}
     const de=tokens.map(()=>zeros(d)),dQ=tokens.map(()=>zeros(d)),dK=tokens.map(()=>zeros(d)),dV=tokens.map(()=>zeros(d)),dm=[];

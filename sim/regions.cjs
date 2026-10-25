@@ -40,10 +40,11 @@ class RegionAttentionNetwork extends AttentionNetwork{
   const fused=Float64Array.from([...baseScene,...regions.flatMap(r=>[...r.vector,...(r.geometry?[r.geometry.walkableFraction,r.geometry.centerInside]:[])] )]),projected=this.linear(this.regionFuse,fused),scene=this.tanh(baseScene.map((v,i)=>v+projected[i]));
   return {scene,regions,fused};
  }
- sceneBackward(c,dscene,dz,g){
+ sceneBackward(c,dscene,dz,g,extra=null){
   const d=this.width,{regions,fused}=c.extension,dp=this.tanhBack(c.scene,dscene),dfused=this.linearBack(this.regionFuse,fused,dp,g),dbase=dp.slice();plus(dbase,dfused.slice(0,d));
   for(let r=0;r<regions.length;r++){
-   const region=regions[r],dmix=this.tanhBack(region.vector,dfused.slice(d+r*(d+(this.terrain?2:0)),d+r*(d+(this.terrain?2:0))+d)),dw=zeros(region.objects.length);let average=0;
+   const region=regions[r],dr=dfused.slice(d+r*(d+(this.terrain?2:0)),d+r*(d+(this.terrain?2:0))+d);if(extra?.regionGradients)plus(dr,extra.regionGradients[r]);
+   const dmix=this.tanhBack(region.vector,dr),dw=zeros(region.objects.length);let average=0;
    for(let i=0;i<dw.length;i++){for(let k=0;k<d;k++)dw[i]+=dmix[k]*region.objects[i].value[k];average+=region.weights[i]*dw[i];}
    for(let i=0;i<dw.length;i++){
     const o=region.objects[i],dv=dmix.map(v=>v*region.weights[i]),dr=this.linearBack(this.regionValue,o.relation,dv,g),ds=region.weights[i]*(dw[i]-average);

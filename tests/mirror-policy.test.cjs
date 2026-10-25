@@ -1,0 +1,14 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {sampleMixture,mirrorPolicy}=require('../sim/mirror-policy.cjs');
+const {heads}=require('../sim/skills.cjs');
+const {skillEnvironment}=require('../sim/training.cjs');
+const {mirrorFeatures,mirrorContext,mirrorDirection}=require('../sim/mirror-audit.cjs');
+const branch=b=>(h)=>{const p=Array(heads[h]).fill(0);if(h===0){p[0]=b?.2:.8;p[1]=1-p[0];}else if(h===1){p[1]=b?.2:.9;p[5]=1-p[1];}else p[0]=1;return p;};
+const sampled=sampleMixture([branch(0),branch(1)],null,true);assert.deepEqual(sampled.action,[0,1,0,0]);assert.ok(Math.abs(Math.exp(sampled.logp)-.38)<1e-12);
+const env=skillEnvironment({seed:1,width:1000,height:650,mobile:false}),f=env.features(),c=env.context();
+const net={forward(){const logits=Array(heads.reduce((a,b)=>a+b,0)+1).fill(0);logits[0]=10;logits[heads[0]+5]=10;return {activations:[[],logits],value:5};}};
+const p=mirrorPolicy(net).sample(f,null,true,c),q=mirrorPolicy(net).sample(mirrorFeatures(f),null,true,mirrorContext(c));
+assert.ok(Math.abs(p.probs[1][1]-p.probs[1][5])<1e-12);
+for(let i=0;i<9;i++)assert.ok(Math.abs(p.probs[1][i]-q.probs[1][mirrorDirection[i]])<1e-12);
+assert.equal(p.value,5);console.log('Mirror joint-policy mixture tests passed');

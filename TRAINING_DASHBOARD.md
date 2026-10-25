@@ -10,7 +10,7 @@ BANANA_AI_REPLAY=1 npm start
 
 開啟 <http://127.0.0.1:8893/training/>，或由遊戲「AI 與 Replay」內的「訓練儀表板」進入。主選單、暫停與結算共用該入口。環境變數未開啟時，本機儀表板與 API 都回傳 404。HTML／JS／CSS 位於 `tools/training/`，不會包含在 GitHub Pages 的 `dist/` 發布檔案裡。
 
-儀表板每 3 秒更新；顯示平均／單局最高存活秒數曲線、每代最低／最高、60 秒達成率及樣本數。可篩選有 Replay 的代數、點曲線圓點或表格按鈕直接播放，並暫停、繼續、前後跳轉 5 秒、重新播放及下載。跳轉按錄製的固定物理步計算播放秒數；向後會從起點重新模擬到目標，向前逐步模擬，不省略碰撞或亂數更新。跳轉時暫時靜音，保留原本的播放／暫停狀態，抵達結尾仍驗證結果；載入或跳轉中停用按鈕，前後界限限制在 Replay 範圍內。遊戲匯入的 Replay 也有同樣的前後 5 秒按鈕。播放使用錄製時的 viewport 與手機倍率，不重新執行 NN；Replay 的校驗結果及錯誤會顯示在播放器上方。
+儀表板每 3 秒更新；顯示平均／單局最高存活秒數曲線、每代最低／最高、60 秒達成率、樣本數及訓練耗時。耗時是該代採樣、更新、評估（含訓練試跑及候選驗證）與儲存的實際經過秒數，不是遊戲存活秒數；滑鼠移到耗時可查看分項。初代尚無 rollout／更新時這兩項為 0；開始前盤面建立／基準試跑及批次結束後獨立測試不計入任何一代。耗時量測結束後才寫入耗時欄位，這筆小型寫入本身不計入。沒有實測資料的舊代顯示「—」，不使用檔案時間推估。可篩選有 Replay 的代數、點曲線圓點或表格按鈕直接播放，並暫停、繼續、前後跳轉 5 秒、重新播放及下載。跳轉按錄製的固定物理步計算播放秒數；向後會從起點重新模擬到目標，向前逐步模擬，不省略碰撞或亂數更新。跳轉時暫時靜音，保留原本的播放／暫停狀態，抵達結尾仍驗證結果；載入或跳轉中停用按鈕，前後界限限制在 Replay 範圍內。遊戲匯入的 Replay 也有同樣的前後 5 秒按鈕。播放使用錄製時的 viewport 與手機倍率，不重新執行 NN；Replay 的校驗結果及錯誤會顯示在播放器上方。
 
 ## 先試一筆真實基準
 
@@ -76,3 +76,18 @@ result = TrainingStore().record_generation(generation_record, representative_rep
 相同 runId 不允許變更遊戲來源、評估 seeds 或 `config`；需另開 runId，避免無法比較的分數混成一條曲線。檔案寫入時檢查 Replay 來源版本、格式、seed 及單局分數；播放時再實際重演並驗證最終狀態。舊版本 Replay 保留下載，但儀表板停用直接播放，需切回對應 commit。
 
 本工具不替訓練器驗證模型是否為 NN，也不保證上報平均分數可信；`trainer` 應據實填寫，評估與 survival-only 的規則需由訓練器實作。訓練方式見 [NN_TRAINING.md](NN_TRAINING.md)，現有模擬 API 見 [SIMULATION.md](SIMULATION.md)。
+
+
+## 耗時紀錄與歷史補登
+
+SQLite 的 `generations.timing_seconds` 保存 `timingSeconds` JSON（`total` 必填，`rollout`／`update`／`evaluation`／`save` 為可選分項）。既有資料庫會自動加上可為 null 的欄位，不改分數與 Replay。API 額外回傳已記錄耗時的代數，讓先前已載入的表格也能顯示稍後寫入或補登的時間。
+
+新版訓練器每代完成 checkpoint／Replay 保存後寫入耗時；若中斷在耗時寫入前，該代暫顯示「—」，保留既有分數。仍在執行的舊版訓練器可從它已輸出的真實 `timingSeconds` 補登，無需重跑或重啟訓練：
+
+```sh
+python3 scripts/import-training-timings.py /absolute/path/training.log
+# 單一尚在寫入的 log；持續補登，遇到批次完成 Checkpoint 行即停止。
+python3 scripts/import-training-timings.py /absolute/path/live-training.log --follow
+```
+
+補登只填既有代數的空耗時，不建立新代、不覆寫既有耗時、不重排 Replay；部分寫入的 JSON 行會等到完整換行才處理。若舊 log 已遺失，就維持未知。可用 `--directory` 或 `BANANA_TRAINING_DIR` 指向其他資料目錄。

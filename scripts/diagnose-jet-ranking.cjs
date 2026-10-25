@@ -1,0 +1,16 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),v8=require('node:v8'),zlib=require('node:zlib'),crypto=require('node:crypto'),assert=require('node:assert/strict');
+const {createNetwork,Random}=require('../sim/ppo.cjs'),{featureCount}=require('../sim/training.cjs'),{sourceDigest}=require('../sim/environment.cjs'),{skills}=require('../sim/skills.cjs'),{ranking}=require('../sim/ranking-metrics.cjs');
+const prior=process.argv[2];if(!prior||process.argv.length!==3)throw Error('Usage: node scripts/diagnose-jet-ranking.cjs HOLDOUT_DIRECTORY');
+const old=JSON.parse(fs.readFileSync(path.join(prior,'report.json')));assert.equal(old.status,'complete');assert.equal(old.sourceDigest,sourceDigest);
+const datafile=path.join(prior,'heldout-observations.v8.gz'),hash=f=>crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex'),rows=v8.deserialize(zlib.gunzipSync(fs.readFileSync(datafile))),sources=[{file:datafile,hash:hash(datafile)}];
+const dir=path.resolve('.training/diagnostics','jet-ranking-'+new Date().toISOString().replace(/[:.]/g,'-'));fs.mkdirSync(dir,{recursive:true});console.log(dir);
+const report={prior,sourceDigest,sources,status:'measuring',models:[],note:'Diagnostic thresholds only; no selection or policy changes. Same heldout labels, not an additional independent test. Correlated observations from four game seeds.'};
+const save=()=>fs.writeFileSync(path.join(dir,'report.json'),JSON.stringify(report,null,2));save();
+for(const m of old.models){const file=path.join(old.prior,m.name+'.json'),c=JSON.parse(fs.readFileSync(file));sources.push({file,hash:hash(file)});assert.equal(c.sourceDigest,sourceDigest);assert.equal(c.coordinateContract,'milk-skills-v5');const net=createNetwork(featureCount,c.hidden,new Random(0),c.architecture);assert.equal(c.parameters.length,net.parameters.length);assert.ok(c.parameters.every(Number.isFinite));net.parameters.set(c.parameters);const rng=new Random(1),scored=rows.map(r=>{
+ assert.ok(r.context.skills[6]);const s=net.sample(r.features,rng,true,r.context),probs=s.probs[0],rivals=probs.map((v,i)=>({v,i})).filter(o=>o.i!==6&&r.context.skills[o.i]).sort((a,b)=>b.v-a.v),rival=rivals[0];return {seed:r.seed,collector:r.collector,positive:r.action[0]===6,score:probs[6],margin:probs[6]-rival.v,rival:skills[rival.i].name,chosen:s.action[0],teacher:r.action[0]};});
+ const missed=scored.filter(r=>r.positive&&r.chosen!==6),rivals={};for(const r of missed)rivals[r.rival]=(rivals[r.rival]||0)+1;
+ const compact=x=>{const {curve,bins,...rest}=x;return rest;};
+ report.models.push({name:m.name,probability:ranking(scored),margin:ranking(scored.map(r=>({...r,score:r.margin}))),perGameSeed:old.probeSeeds.map(seed=>({seed,probability:compact(ranking(scored.filter(r=>r.seed===seed)))})),missed:missed.length,missedRivals:rivals,positiveJetRank:scored.filter(r=>r.positive).map(r=>({score:r.score,margin:r.margin})),actual:{tp:scored.filter(r=>r.positive&&r.chosen===6).length,fp:scored.filter(r=>!r.positive&&r.chosen===6).length}});save();console.log(m.name,report.models.at(-1).probability.auc,report.models.at(-1).probability.averagePrecision);
+}
+for(const s of sources)assert.equal(hash(s.file),s.hash);report.sourcesUnchanged=true;report.status='complete';save();

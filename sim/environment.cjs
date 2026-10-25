@@ -25,6 +25,7 @@ function createEnvironment(options={}){
       for(const key of ['width','height','mobile'])if(nextOptions[key]!==undefined&&nextOptions[key]!== (options[key]??({width:1000,height:650,mobile:false}[key])))throw Error('Profile changes require a new environment');
       resetMetrics();env=context.BananaAI.createEnvironment({...options,...nextOptions,sourceDigest});return env.observe();
     },observe:()=>env.observe(),step:(action,frames)=>env.step(action,frames),summary:()=>env.summary(),replay:()=>env.replay(),policy:observation=>env.policy(observation),features:context.BananaAI.features,sourceDigest,
+    diagnosticDigest:()=>crypto.createHash('sha256').update(JSON.stringify(captureScript.runInContext(context))).digest('hex'),
     replayTape:startReplay,
     snapshot(){if(env.config.mode!=='milk'||!env.config.survivalOnly||env.summary().outcome!=='running')throw Error('Snapshots require live milk survival training');return {schema:1,sourceDigest,config:{...env.config},time:env.observe().time,world:JSON.parse(JSON.stringify(captureScript.runInContext(context)))};},
     restoreSnapshot(saved,{heal=false,hp}={}){

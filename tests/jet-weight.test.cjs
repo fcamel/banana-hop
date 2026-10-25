@@ -1,0 +1,10 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {Network,Random,heads}=require('../sim/ppo.cjs');
+const {lossAndGradient,masksFor}=require('../sim/imitation.cjs');
+const context={skills:Array.from({length:10},(_,i)=>i===0||i===6),parameters:Array.from({length:10},()=>({direction:Array.from({length:9},(_,i)=>i===1||i===5),target:Array.from({length:173},(_,i)=>i===0),travel:[true,false]}))};
+const net=new Network(2,4,new Random(3)),row={features:[1,0],context,action:[6,1,0,0]},w=heads.map(n=>Array(n).fill(1));w[0][6]=3;
+const a=lossAndGradient(net,[row]),b=lossAndGradient(net,[row],w),p=net.forward(row.features,masksFor(context,row.action),6).probs[0][6];assert.ok(Math.abs(b.loss-a.loss+2*Math.log(p))<1e-10);
+const other={...row,action:[0,1,0,0]};assert.deepEqual(lossAndGradient(net,[other]),lossAndGradient(net,[other],w));
+const i=net.layers.at(-1).b+6,old=net.parameters[i],eps=1e-5;net.parameters[i]=old+eps;const plus=lossAndGradient(net,[row],w).loss;net.parameters[i]=old-eps;const minus=lossAndGradient(net,[row],w).loss;net.parameters[i]=old;assert.ok(Math.abs(b.gradient[i]-(plus-minus)/(2*eps))<1e-5);
+console.log('Jet skill weighting tests passed');

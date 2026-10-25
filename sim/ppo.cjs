@@ -103,20 +103,21 @@ function rolloutDiagnostics(net,buffer){
   const value=(prefix='')=>{const e=prefix?'beforeError':'error',mae=prefix?'beforeMAE':'mae';const bias=moments[e]/mass,errorVariance=Math.max(0,moments[e+'2']/mass-bias*bias);return {mae:moments[mae]/mass,bias,explainedVariance:targetVariance>1e-12?1-errorVariance/targetVariance:null};};
   return {samples:buffer.length,kl:kl/mass,klBasis:'full-rollout-after-update',headEntropy:headEntropy.map(v=>v/mass),normalizedHeadEntropy:normalized.map((v,i)=>choiceMass[i]?v/choiceMass[i]:null),headChoiceFraction:choiceMass.map(v=>v/mass),policyChoiceFraction:choice/mass,valueBefore:beforeValid?value('before'):null,valueAfter:value(),targetMean:moments.target/mass,targetVariance};
 }
-function optimize(net,adam,buffer,rng,{epochs=4,batchSize=64,learningRate=.0003,targetKl=.02,...lossOptions}={}){
+function optimize(net,adam,buffer,rng,{epochs=4,batchSize=64,learningRate=.0003,targetKl=.02,auxiliary=null,...lossOptions}={}){
   const mass=buffer.reduce((s,t)=>s+(t.weight??1),0),mean=buffer.reduce((s,t)=>s+(t.weight??1)*t.advantage,0)/mass,std=Math.sqrt(buffer.reduce((s,t)=>s+(t.weight??1)*(t.advantage-mean)**2,0)/mass)+1e-8;
   for(const t of buffer)t.advantage=(t.advantage-mean)/std;
-  let last,updates=0;const epochStats=[];
-  const finish=earlyStopped=>({...last,gradient:undefined,updates,earlyStopped,epochStats,diagnostics:rolloutDiagnostics(net,buffer)});
+  let last,updates=0;const epochStats=[],auxiliaryStats=[];
+  const finish=earlyStopped=>({...last,gradient:undefined,updates,earlyStopped,epochStats,...(auxiliary?{auxiliaryStats}:{}),diagnostics:rolloutDiagnostics(net,buffer)});
   for(let epoch=0;epoch<epochs;epoch++){
     const order=Array.from({length:buffer.length},(_,i)=>i);for(let i=order.length-1;i>0;i--){const j=Math.floor(rng.next()*(i+1));[order[i],order[j]]=[order[j],order[i]];}
     const stats={epoch:epoch+1,batches:0,samples:0,onlineKL:0,maxBatchKL:0};epochStats.push(stats);
-    for(let i=0;i<order.length;i+=batchSize){const batch=order.slice(i,i+batchSize).map(j=>buffer[j]);last=lossAndGradient(net,batch,lossOptions);stats.batches++;stats.onlineKL=(stats.onlineKL*stats.samples+last.kl*batch.length)/(stats.samples+batch.length);stats.samples+=batch.length;stats.maxBatchKL=Math.max(stats.maxBatchKL,last.kl);if(last.kl>targetKl*1.5)return finish(true);adam.step(net.parameters,last.gradient,learningRate);updates++;}
+    for(let i=0;i<order.length;i+=batchSize){const batch=order.slice(i,i+batchSize).map(j=>buffer[j]);last=lossAndGradient(net,batch,lossOptions);stats.batches++;stats.onlineKL=(stats.onlineKL*stats.samples+last.kl*batch.length)/(stats.samples+batch.length);stats.samples+=batch.length;stats.maxBatchKL=Math.max(stats.maxBatchKL,last.kl);if(last.kl>targetKl*1.5)return finish(true);if(auxiliary){const extra=auxiliary(net);if(!extra?.gradient||extra.gradient.length!==last.gradient.length||!extra.gradient.every(Number.isFinite)||!Number.isFinite(extra.loss))throw Error('Invalid auxiliary gradient');let baseNorm=0,extraNorm=0;for(let j=0;j<last.gradient.length;j++){baseNorm+=last.gradient[j]**2;extraNorm+=extra.gradient[j]**2;last.gradient[j]+=extra.gradient[j];}auxiliaryStats.push({loss:extra.loss,baseNorm:Math.sqrt(baseNorm),auxiliaryNorm:Math.sqrt(extraNorm)});}adam.step(net.parameters,last.gradient,learningRate);updates++;}
   }
   return finish(false);
 }
 function createNetwork(input,hidden=32,rng=new Random(),architecture='mlp-v1'){
   if(architecture==='mlp-v1')return new Network(input,hidden,rng);
+  if(architecture==='region-direction-v1')return new (require('./directional.cjs').DirectionalRegionNetwork)(input,hidden,rng);
   if(architecture==='region-attention-v1'||architecture==='region-attention-v2')return new (require('./regions.cjs').RegionAttentionNetwork)(input,hidden,rng,architecture==='region-attention-v2');
   if(architecture==='entity-attention-v1')return new (require('./attention.cjs').AttentionNetwork)(input,hidden,rng);
   throw Error('Unknown NN architecture');

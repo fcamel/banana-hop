@@ -1,6 +1,8 @@
 'use strict';
 const $=id=>document.getElementById(id),state={run:null,rows:[],runs:[],source:null,page:0,controller:null,playing:null},pageSize=30;
 const seconds=n=>Number(n).toFixed(2)+' 秒',mb=n=>(n/1000000).toFixed(2)+' MB';
+function duration(n){if(n===null||n===undefined||!Number.isFinite(n))return '—';const rounded=Math.round(n*10)/10;if(rounded<60)return rounded.toFixed(1)+' 秒';const minutes=Math.floor(rounded/60),seconds=(rounded%60).toFixed(1);return minutes+' 分 '+seconds+' 秒';}
+function timingDetail(t){if(!t)return '舊紀錄未記錄耗時';return [['rollout','採樣'],['update','更新'],['evaluation','評估'],['save','儲存']].filter(([k])=>Number.isFinite(t[k])).map(([k,label])=>label+' '+duration(t[k])).join(' · ');}
 function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function svg(tag,attrs,text){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [key,value] of Object.entries(attrs))e.setAttribute(key,value);if(text!==undefined)e.textContent=text;return e;}
 function stopPlayer(){state.playing=null;$('player').src='about:blank';$('viewer').hidden=true;for(const id of ['pause','restart','back-five','forward-five'])$(id).disabled=true;}
@@ -29,11 +31,11 @@ function renderTable(){
   const all=state.rows.filter(r=>!$('saved-only').checked||r.replay).slice().reverse(),pages=Math.max(1,Math.ceil(all.length/pageSize));state.page=Math.min(state.page,pages-1);$('rows').replaceChildren();
   const compatible=state.runs.find(r=>r.id===state.run)?.source_digest===state.source;
   for(const row of all.slice(state.page*pageSize,(state.page+1)*pageSize)){
-    const tr=node('tr');for(const text of [row.generation,seconds(row.mean),seconds(row.minimum)+' / '+seconds(row.maximum),Math.round(row.success_rate*100)+'%',row.samples])tr.append(node('td',text));
+    const tr=node('tr');for(const text of [row.generation,duration(row.timingSeconds?.total),seconds(row.mean),seconds(row.minimum)+' / '+seconds(row.maximum),Math.round(row.success_rate*100)+'%',row.samples])tr.append(node('td',text));tr.children[1].title=timingDetail(row.timingSeconds);
     const reason=node('td'),label=row.reason==='baseline'?'第一代':row.reason==='breakthrough'?'新高紀錄':'分數紀錄';reason.append(node('span',label,'badge '+(row.reason==='baseline'?'baseline':'')));tr.append(reason);
     const action=node('td');if(row.replay){const button=node('button','播放');button.disabled=!compatible;button.setAttribute('aria-label','播放第 '+row.generation+' 代');if(!compatible)button.title='遊戲程式版本不同，請切回錄製時版本';button.addEventListener('click',()=>play(row));const link=node('a','下載');link.href='/training/api/replays/'+encodeURIComponent(row.replay);link.download=row.replay;action.append(button,link);}else action.append(node('span',row.reason==='score-only'?'—':'已輪替移除','removed'));tr.append(action);$('rows').append(tr);
   }
-  if(!all.length){const tr=node('tr'),td=node('td','沒有符合的紀錄');td.colSpan=7;tr.append(td);$('rows').append(tr);}
+  if(!all.length){const tr=node('tr'),td=node('td','沒有符合的紀錄');td.colSpan=8;tr.append(td);$('rows').append(tr);}
   $('page').textContent=(state.page+1)+' / '+pages;$('previous').disabled=state.page===0;$('next').disabled=state.page===pages-1;
 }
 function render(data){
@@ -58,6 +60,7 @@ async function load(runId=state.run,reset=false){
       if(total<after){state.rows=[];after=0;continue;}
       state.rows.push(...data.generations);after=state.rows[state.rows.length-1]?.generation||0;
     }while(data.generations.length===500||state.rows.length<state.runs.find(r=>r.id===state.run)?.generations);
+    const timings=new Map((data.timings||[]).map(t=>[t.generation,t.timingSeconds]));for(const row of state.rows)if(timings.has(row.generation))row.timingSeconds=timings.get(row.generation);
     const retained=new Set(data.retained);for(const row of state.rows)if(row.replay&&!retained.has(row.replay)){row.replay=null;row.bytes=0;}
     if(document.activeElement!==$('run')){$('run').replaceChildren(...state.runs.map(r=>{const option=node('option',r.name+' · '+r.trainer);option.value=r.id;return option;}));if(!state.runs.length)$('run').append(node('option','尚無紀錄'));$('run').value=state.run||'';}
     render(data);$('sync').textContent='每 3 秒更新 · '+new Date().toLocaleTimeString('zh-TW');

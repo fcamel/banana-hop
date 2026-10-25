@@ -190,6 +190,55 @@ class StoreTests(unittest.TestCase):
         self.assertTrue(foreign.exists())
         self.assertFalse((self.store.folder / ('a' * 24 + '.json.tmp')).exists())
 
+    def test_timing_persists_and_can_be_backfilled_without_touching_scores_or_replays(self):
+        timing = {'rollout': 12.3, 'update': 70, 'evaluation': 4, 'save': .2, 'total': 86.5}
+        self.save(1, 10, timingSeconds=timing)
+        self.save(2, 9)
+        before = self.store.snapshot()
+        self.assertEqual(before['generations'][0]['timingSeconds'], timing)
+        self.assertIsNone(before['generations'][1]['timingSeconds'])
+        item = {'runId': 'test', 'generation': 2, 'timingSeconds': {'total': 0}}
+        self.assertEqual(self.store.record_timings([item], only_missing=True), 1)
+        self.assertEqual(self.store.record_timings([item], only_missing=True), 0)
+        after = self.store.snapshot(after=2)
+        self.assertEqual(after['generations'], [])
+        self.assertEqual(after['timings'][-1]['timingSeconds']['total'], 0)
+        self.assertEqual(before['usage'], after['usage'])
+        self.assertEqual(before['runs'], after['runs'])
+        self.assertEqual(self.store.record_timings([{**item, 'runId': 'unknown'}]), 0)
+
+    def test_timing_migration_preserves_existing_archive(self):
+        import sqlite3
+        self.save(1, 10)
+        with sqlite3.connect(Path(self.temp.name) / 'metrics.sqlite3') as db:
+            db.execute('ALTER TABLE generations DROP COLUMN timing_seconds')
+        migrated = TrainingStore(self.temp.name).snapshot()
+        self.assertEqual(migrated['generations'][0]['mean'], 10)
+        self.assertIsNone(migrated['generations'][0]['timingSeconds'])
+        self.assertEqual(migrated['usage']['files'], 1)
+
+    def test_invalid_timing_is_rejected_before_any_archive_change(self):
+        for invalid in [{}, {'total': -1}, {'total': float('nan')}, {'total': float('inf')}, {'total': True}, {'total': 1, 'update': 2}, {'total': 1, 'unknown': 1}]:
+            with self.assertRaises(ValueError):
+                self.save(1, 10, timingSeconds=invalid)
+        self.assertEqual(self.store.snapshot()['runs'], [])
+
+    def test_log_import_uses_only_real_completed_json_lines_and_waits_for_partial_lines(self):
+        import io
+        spec = importlib.util.spec_from_file_location('timing_import', ROOT / 'scripts/import-training-timings.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        item = {'runId': 'test', 'generation': 1, 'timingSeconds': {'total': 76.1}}
+        line = json.dumps(item)
+        stream = io.StringIO('Baseline idle: 12s\n' + line + '\n' + line[:12])
+        rows, complete = module.read_records(stream)
+        self.assertEqual(rows, [item])
+        self.assertFalse(complete)
+        self.assertEqual(stream.read(), line[:12])
+        rows, complete = module.read_records(io.StringIO('Final test: {}\nCheckpoint: /tmp/example\n'))
+        self.assertTrue(complete)
+        self.assertEqual(rows, [])
+
     def test_disabled_local_tool_returns_404_without_creating_store(self):
         handler = object.__new__(LocalHandler)
         handler.path = '/training/'

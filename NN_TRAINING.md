@@ -4,6 +4,12 @@
 
 ## 目標與訓練方式
 
+另有隔離的[行為模仿診斷](NN_IMITATION.md)，用來檢查示範擬合、類別失衡與自主遊玩差距，不替換正式 PPO 訓練。
+
+已加入不更新 weights 的[能力診斷與公平基準](AI_DIAGNOSTICS.md)，包含同可見資訊規則策略、四類短場景、技能曝露與操作反應統計。
+
+架構與實驗方向的重新評估見 [AI 訓練評估與改進方向](NN_AI_REVIEW.md)（2026-10-25）。該報告比較外部成功案例與本機結果，提出待決策的實驗，不代表下列現行設計已變更。
+
 第一階段只玩「蕉片崛起」的小兵生存階段，不進 Boss 戰。NN 讀取狀態並輸出操作，強化學習（RL）演算法根據遊玩結果調整 NN 權重。目前採 PPO-Clip；NN 與 RL 分別負責策略表示與學習方法，並非二選一。
 
 提供輸入、動作與最終分數，仍需更新權重的方法。可用 RL 讓模型自行探索，也能用演化演算法搜尋權重；這個任務先選 PPO 作起點。現有 rule-based AI 作為比較基準，不必強迫 NN 模仿；若探索太慢，再考慮以玩家／規則 AI 示範預訓練，之後用 RL 繼續改善。
@@ -188,3 +194,25 @@ npm run training:nn -- --architecture regions --generations 10 --run-id milk-reg
 九宮格 v2 額外讓每格知道「可行走面積比例」與「中心是否位於地圖內」，由原本已提供的四邊界距離和畫面投影計算；同時送入關係編碼與決策融合層，避免空白地圖外區域只能靠全局 Value 自行辨別。精確公式見 GAMEPLAY.md。區域中心在地圖內只是幾何上的可達，不保證移動途中安全；模型仍自行選方向。空場景也保留地形資訊，玩家跳起來不會令地圖邊界改變。v1 權重維度維持相容載入，v2 必須另開模型；不自動遷移舊權重或 Adam。測試增加四邊／角落、桌機／手機 viewport、跳躍高度不變性、地形進入兩條決策路徑與舊架構載入覆蓋。
 
 目前課程採開局與最佳終局前起點兩組；比例、時間範圍及 HP 以 GAMEPLAY.md 為準。還原不額外給無敵，第一次真實扣血才按遊戲規則取得保護。新課程需另開 run，可 warm-start 同架構最佳權重；不改已啟動的舊批次設定。
+
+
+## 區域與方向直接對應的試作
+
+`--architecture region-directions` 選用 `region-direction-v1`，保留原本 `regions` 與 `attention` 作為對照。原本從融合局面一次輸出方向；此架構讓 move／evade 的每個方向各自讀取對應區域向量，與整體局面、地形、方向及技能 one-hot 一起交給共享評分 NN。這個分數是 policy logit，不是存活秒數或 Q 值。具體索引與尺寸見 GAMEPLAY.md。
+
+```text
+整體局面＋右側區域＋地形＋往右＋move → 共享評分 NN → 往右 logit
+整體局面＋右上區域＋地形＋往右上＋move → 同一評分 NN → 往右上 logit
+…… → 原遮罩／softmax → 方向選擇
+```
+
+方向選擇仍是原本的短動作，不會自動走到格中心；技能選擇、目標選擇、其他技能與 critic 維持原行為。評分層、局面及區域表徵的梯度一起由 PPO 更新；抽樣重新選定技能後須重算方向，不能沿用預設 move 的分布。改架構需另開 run，舊架構不能直接 resume／warm-start。
+
+```sh
+npm run training:nn -- --architecture region-directions --generations 10 --run-id milk-spatial-directions-01 --curriculum-replay /absolute/path/breakthrough.json
+npm run training:diagnose-directions -- --checkpoint /absolute/path/quick-best.json
+```
+
+診斷可比較原架構與新架構的權重對左右敵群、迎面／遠離彈幕的方向機率反應，不更新權重，也不回流課程。它能發現輸出是否對局勢敏感，但單看敏感性、未訓練權重或注意力權重不能證明存活能力。需搭配相同評估條件的完整遊戲成績、Replay 與損血診斷。測試包含固定全局下局部區域到方向的直接連結、全參數數值梯度、被替換輸出的梯度隔離、條件機率一致性、舊架構回歸與正常物理重播。
+
+Dashboard 的每代紀錄也保存訓練耗時與採樣／更新／評估／儲存分項，既有資料庫自動遷移；舊版正在跑的程序可從真實 CLI log 補登，不重跑訓練。時間範圍、未知值與補登指令見 [TRAINING_DASHBOARD.md](TRAINING_DASHBOARD.md)。

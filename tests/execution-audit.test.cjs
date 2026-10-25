@@ -1,0 +1,15 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {measure,directionProbe}=require('../sim/execution-audit.cjs');
+const {skillEnvironment}=require('../sim/training.cjs');
+const p={x:0,y:0,z:0,hp:5,down:0,recoil:0,jumpLock:0};
+const f={before:{time:0,player:p},action:{x:1,y:0},result:{observation:{time:1/60,player:{...p,x:205/60}}}};
+assert.equal(measure(f).error,0);
+assert.equal(measure({...f,result:{...f.result,terminated:true}}).excluded,'terminal');
+assert.ok(measure({...f,action:{x:-1,y:0}}).error>6);
+assert.equal(measure({...f,before:{...f.before,player:{...p,recoil:1}}}).excluded,'forced-motion');
+assert.equal(measure({...f,before:{...f.before,player:{...p,x:1250}}}).excluded,'boundary');
+const e=skillEnvironment({seed:8,width:1000,height:650,mobile:false}),features=e.features(),copy=Array.from(features);
+const probe=directionProbe(features,[0,1,0,0],e.context());assert.ok(probe.gap>=0);assert.equal(probe.scores.length,9);assert.deepEqual(Array.from(features),copy);
+assert.equal(directionProbe(features,[2,0,1,0],e.context()),null);
+console.log('Execution audit tests passed');

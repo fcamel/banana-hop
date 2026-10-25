@@ -1,0 +1,10 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {batch,metrics}=require('../sim/jet-demo.cjs');
+const {Random}=require('../sim/ppo.cjs');
+const original=[{pool:'old'}],extra=[{pool:'new'}];
+assert.equal(batch(original,extra,new Random(1),false).filter(r=>r.pool==='old').length,32);
+const b=batch(original,extra,new Random(1),true);assert.equal(b.length,32);assert.equal(b.filter(r=>r.pool==='new').length,16);assert.throws(()=>batch(original,[],new Random(1),true),/Empty/);
+const rows=[{features:[6],action:[6,0,0,0],context:{skills:Array(10).fill(true)}},{features:[6],action:[0,0,0,0],context:{skills:Array(10).fill(true)}},{features:[0],action:[0,0,0,0],context:{skills:Array(10).fill(false)}}];
+const m=metrics({sample(f){return {action:[f[0],0,0,0]};}},rows);assert.equal(m.positive,1);assert.equal(m.tp,1);assert.equal(m.negative,1);assert.equal(m.fp,1);assert.equal(m.recall,1);assert.equal(m.falsePositiveRate,1);assert.equal(metrics({},[]).recall,null);
+console.log('Jet demo sampling and metrics tests passed');

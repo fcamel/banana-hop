@@ -16,6 +16,20 @@ DEFAULT_MAX_BYTES = 100_000_000
 RUN_ID = re.compile(r'[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\Z')
 
 
+def validate_timing(value):
+    if value is None:
+        return None
+    allowed = {'rollout', 'update', 'evaluation', 'save', 'total'}
+    if not isinstance(value, dict) or 'total' not in value or set(value) - allowed:
+        raise ValueError('Invalid timingSeconds fields')
+    for key, seconds in value.items():
+        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not math.isfinite(seconds) or seconds < 0:
+            raise ValueError('timingSeconds values must be finite nonnegative seconds')
+    if any(v > value['total'] + .01 for k, v in value.items() if k != 'total'):
+        raise ValueError('timingSeconds phase exceeds total')
+    return dict(value)
+
+
 def source_digest():
     text = '\n'.join(name + '\n' + (ROOT / 'dist' / name).read_text() for name in SOURCES)
     return hashlib.sha256(text.encode()).hexdigest()
@@ -84,6 +98,8 @@ class TrainingStore:
                     samples INTEGER, reason TEXT, replay TEXT, bytes INTEGER, replay_score REAL,
                     UNIQUE(run_id,generation));
                 ''')
+                if 'timing_seconds' not in {r['name'] for r in db.execute('PRAGMA table_info(generations)')}:
+                    db.execute('ALTER TABLE generations ADD COLUMN timing_seconds TEXT')
                 # A crash while saving can leave only our own unreferenced file.
                 owned = {row[0] for row in db.execute('SELECT replay FROM generations WHERE replay IS NOT NULL')}
                 for name in owned:
@@ -112,6 +128,7 @@ class TrainingStore:
         if not isinstance(scores, list) or not 1 <= len(scores) <= 10000:
             raise ValueError('scores must contain 1 to 10000 survival times')
         scores = [number(s, 'survival seconds') for s in scores]
+        timing = validate_timing(record.get('timingSeconds'))
         config = record.get('config', {})
         if not isinstance(config, dict) or len(json.dumps(config)) > 16000:
             raise ValueError('Invalid run configuration')
@@ -187,17 +204,36 @@ class TrainingStore:
                 db.execute('INSERT INTO runs VALUES(?,?,?,?,?,?,?,?,?,?,?)', (run_id, name, trainer, now, digest, evaluation, len(scores), absolute, relative, mean, config_text))
             elif significant:
                 db.execute('UPDATE runs SET last_saved_best=? WHERE id=?', (mean, run_id))
-            db.execute('INSERT INTO generations(run_id,generation,created,mean,minimum,maximum,success_rate,samples,reason,replay,bytes,replay_score) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
-                       (run_id, generation, now, mean, min(scores), max(scores), sum(s >= 60 - 1e-6 for s in scores) / len(scores), len(scores), reason, filename, len(content) if content else 0, replay_score))
+            db.execute('INSERT INTO generations(run_id,generation,created,mean,minimum,maximum,success_rate,samples,reason,replay,bytes,replay_score,timing_seconds) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                       (run_id, generation, now, mean, min(scores), max(scores), sum(s >= 60 - 1e-6 for s in scores) / len(scores), len(scores), reason, filename, len(content) if content else 0, replay_score, json.dumps(timing) if timing is not None else None))
             return {'runId': run_id, 'generation': generation, 'reason': reason, 'replay': filename, 'usage': self.usage()}
+
+    def record_timings(self, records, only_missing=False):
+        checked = []
+        for item in records:
+            run_id, generation = item.get('runId'), item.get('generation')
+            if not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id) or type(generation) is not int or generation < 1:
+                raise ValueError('Invalid timing runId or generation')
+            timing = validate_timing(item.get('timingSeconds'))
+            if timing is None:
+                raise ValueError('Missing timingSeconds')
+            checked.append((json.dumps(timing), run_id, generation))
+        with self.locked() as db:
+            changed = 0
+            for timing, run_id, generation in checked:
+                changed += db.execute('UPDATE generations SET timing_seconds=? WHERE run_id=? AND generation=?' + (' AND timing_seconds IS NULL' if only_missing else ''), (timing, run_id, generation)).rowcount
+            return changed
 
     def snapshot(self, run_id=None, after=0, limit=500):
         with self.locked() as db:
             runs = [dict(row) for row in db.execute('SELECT r.*,COUNT(g.id) generations,MAX(g.mean) best FROM runs r JOIN generations g ON g.run_id=r.id GROUP BY r.id ORDER BY r.created DESC')]
             chosen = run_id or (runs[0]['id'] if runs else None)
             rows = [dict(row) for row in db.execute('SELECT * FROM generations WHERE run_id=? AND generation>? ORDER BY generation LIMIT ?', (chosen, after, min(500, max(1, limit))))]
+            for row in rows:
+                raw_timing = row.pop('timing_seconds', None)
+                row['timingSeconds'] = json.loads(raw_timing) if raw_timing is not None else None
             retained = [row[0] for row in db.execute('SELECT replay FROM generations WHERE replay IS NOT NULL')]
-            return {'runs': runs, 'runId': chosen, 'generations': rows, 'retained': retained, 'usage': self.usage(), 'sourceDigest': source_digest()}
+            return {'runs': runs, 'runId': chosen, 'generations': rows, 'timings': [{'generation': r['generation'], 'timingSeconds': json.loads(r['timing_seconds'])} for r in db.execute('SELECT generation,timing_seconds FROM generations WHERE run_id=? AND timing_seconds IS NOT NULL', (chosen,))], 'retained': retained, 'usage': self.usage(), 'sourceDigest': source_digest()}
 
     def replay(self, name):
         if not re.fullmatch(r'[a-f0-9]{24}\.json', name):

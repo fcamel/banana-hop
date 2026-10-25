@@ -1,0 +1,7 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path');const {bootstrap}=require('../sim/paired-evaluation.cjs');
+const dir=process.argv[2];if(!dir)throw Error('Usage: summarize-mirror.cjs DIRECTORY');const report=JSON.parse(fs.readFileSync(path.join(dir,'report.json'))),rows=report.episodes.flatMap(e=>e.rows),same=(a,b)=>JSON.stringify(a)===JSON.stringify(b),mean=a=>a.reduce((s,x)=>s+x,0)/a.length;
+const horizontal=rows.filter(r=>[0,3,6].includes(r.choice[0])&&[1,2,4,5,6,8].includes(r.choice[1]));
+const summary={states:rows.length,games:report.episodes.length,skillSame:rows.filter(r=>r.choice[0]===r.mirroredChoice[0]).length,jointMirrored:rows.filter(r=>same(r.expected,r.mirroredChoice)).length,ruleJointMirrored:rows.filter(r=>same(r.expectedRule,r.mirroredRule)).length,horizontal:{states:horizontal.length,jointMirrored:horizontal.filter(r=>same(r.expected,r.mirroredChoice)).length,jointUnchanged:horizontal.filter(r=>same(r.choice,r.mirroredChoice)).length},heads:[]};
+for(const skill of [0,3,6]){const hs=rows.flatMap(r=>r.heads.filter(h=>h.skill===skill)),perGame=report.episodes.map(e=>e.rows.flatMap(r=>r.heads.filter(h=>h.skill===skill))).filter(h=>h.length);summary.heads.push({skill,states:hs.length,meanTV:mean(hs.map(h=>h.tv)),perGameTV:bootstrap(perGame.map(hs=>mean(hs.map(h=>h.tv)))),originalLeftMass:mean(hs.map(h=>h.p[4]+h.p[5]+h.p[6])),mirrorLeftMass:mean(hs.map(h=>h.q[4]+h.q[5]+h.q[6]))});}
+fs.writeFileSync(path.join(dir,'analysis.json'),JSON.stringify(summary,null,2));console.log(summary);

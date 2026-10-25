@@ -1,0 +1,11 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {rows}=require('../sim/route-pair-probes.cjs'),{transform,directionDiagnostics}=require('../sim/route-learning-controls.cjs');
+const {createNetwork,Random}=require('../sim/ppo.cjs');
+const row=rows('train')[0],copy=Array.from(row.features),scaled=transform(row.features,{scale:6.25});
+assert.deepEqual(Array.from(transform(row.features)),copy);assert.equal(scaled[33],row.features[33]*6.25);assert.equal(scaled[35],row.features[35]);assert.deepEqual(Array.from(row.features),copy);
+const compact=transform(row.features,{compact:true});assert.equal(compact.length,100);
+const invalid=Float64Array.from(row.features);invalid[32+3*18]=1;assert.throws(()=>transform(invalid,{compact:true}),/isolated/);
+const data=rows('train').map(r=>({...r,features:transform(r.features,{compact:true})})),net=createNetwork(100,4,new Random(1)),before=Array.from(net.parameters),d=directionDiagnostics(net,data);
+assert.ok(d.gradientNorm>0);assert.ok(d.cancellationRatio>=0&&d.cancellationRatio<=1+1e-10);assert.ok(d.loss>0);assert.deepEqual(Array.from(net.parameters),before);
+console.log('Route learning controls tests passed');

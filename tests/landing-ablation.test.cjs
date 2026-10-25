@@ -1,0 +1,11 @@
+'use strict';
+const assert=require('node:assert/strict');const {initial,specification}=require('../sim/dodge-curriculum.cjs'),{createCodec}=require('../sim/snapshot.cjs'),{skillEnvironment}=require('../sim/training.cjs');
+const saved=initial({...specification(0),count:0}),codec=createCodec(),w=codec.decode(saved.world);w.player.z=20;w.player.vz=-100;w.milkBottles=[{id:999,x:300,y:0,age:0}];saved.world=codec.encode(w);
+const make=mode=>skillEnvironment({seed:1,width:1000,height:650,mobile:false,diagnosticStart:saved,diagnosticLandingMode:mode}),choice=[7,0,129,1],envs=Object.fromEntries(['off','both','decision','reset'].map(m=>[m,make(m)])),first={};
+for(const [m,e] of Object.entries(envs))first[m]=e.step(choice);
+assert.equal(first.off.option.frames,30);assert.equal(first.reset.option.frames,30);assert.equal(JSON.stringify(envs.off.observe()),JSON.stringify(envs.reset.observe()));
+assert.equal(first.both.option.reason,'diagnostic-landing');assert.equal(first.decision.option.reason,'diagnostic-landing');assert.equal(first.both.option.frames,first.decision.option.frames);assert.equal(JSON.stringify(envs.both.observe()),JSON.stringify(envs.decision.observe()));
+const second={};for(const [m,e]of Object.entries(envs))second[m]=e.step(choice);
+assert.equal(second.decision.option.continued,true);assert.equal(second.both.option.continued,false);assert.equal(second.reset.option.continued,false);assert.equal(second.off.option.continued,true);
+assert.ok(envs.both.observe().player.z>1);assert.ok(envs.reset.observe().player.z>1);assert.equal(envs.decision.observe().player.z,0);assert.equal(envs.off.observe().player.z,0);
+assert.throws(()=>make('unknown'));console.log('Landing ablation tests passed');

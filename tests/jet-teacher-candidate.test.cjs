@@ -1,0 +1,10 @@
+'use strict';
+const assert=require('node:assert/strict'),{featureCount,groups}=require('../sim/training.cjs'),{decode}=require('../sim/visible-baseline.cjs'),{choose,jetPose,scoreJet}=require('../sim/jet-teacher-candidate.cjs');
+const context={skills:Array.from({length:10},(_,i)=>i===0||i===6),parameters:Array.from({length:10},()=>({direction:Array.from({length:9},(_,i)=>i===0),target:Array.from({length:173},(_,i)=>i===0),travel:[true,false]}))};
+const f=new Float64Array(featureCount);f[4]=1;f[11]=1;f[18]=1;assert.equal(choose(f,context).choice[0],0);assert.equal(jetPose(decode(f),.1).z,30);assert.equal(jetPose(decode(f),.3).z,90);
+let at=32;for(const [name,n,w] of groups){if(name==='drops')break;at+=n*w;}const bullet=Float64Array.from(f);bullet[at]=1;bullet[at+1]=100/1250;bullet[at+3]=32/200;bullet[at+4]=-240/500;bullet[at+7]=3;assert.equal(choose(bullet,context).choice[0],6);assert.ok(scoreJet(bullet,context,0).walkRisk>scoreJet(bullet,context,0).risk);
+const low=Float64Array.from(bullet);low[11]=.001;assert.ok(jetPose(decode(low),0).on<.002);assert.equal(jetPose(decode(low),1).z,0);assert.ok(jetPose(decode(bullet),1).z>0);const empty=Float64Array.from(low);empty[11]=0;assert.equal(jetPose(decode(empty),.1).z,0);
+const imminent=Float64Array.from(bullet);imminent[at+1]=10/1250;imminent[at+4]=0;assert.ok(scoreJet(imminent,context,0).risk>0);
+const inv=Float64Array.from(bullet);inv[5]=2/2.5;assert.equal(choose(inv,context).choice[0],0);assert.equal(f[at],0);
+console.log('Jet teacher candidate tests passed');
+const near=Float64Array.from(f),far=Float64Array.from(f);near[32]=far[32]=1;near[33]=(94*(1-1/2.1)-.01)/1250;far[33]=(94*(1-1/2.1)+.01)/1250;assert.equal(choose(near,context).choice[0],0);assert.equal(choose(far,context).choice[0],0);assert.ok(Math.abs(scoreJet(near,context,0).score-scoreJet(far,context,0).score)<.01);
